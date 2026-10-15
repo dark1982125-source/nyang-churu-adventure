@@ -83,7 +83,7 @@ export function heroOffers(skills: RunSkills, weapon: WeaponDef, luck: number, r
   for (const p of passiveIds) {
     const lvl = skills.passives[p] ?? 0;
     if (lvl >= TUNING.growth.passiveMaxLevel) continue;
-    if (lvl === 0 && limit !== null && ownedPassiveCount >= limit) continue;
+    if (lvl === 0 && ownedPassiveCount >= limit) continue;
     pool.push({ kind: 'passive', id: p, nextLevel: lvl + 1 });
   }
 
@@ -115,9 +115,9 @@ export function offerLabel(o: Offer, weapon: WeaponDef): { title: string; detail
       return { title: `${def.name} [${gradeName(o.grade)}${lv}]${o.isNew ? ' NEW' : ''}`, detail: def.desc };
     }
     case 'passive':
-      return { title: `${PASSIVES[o.id].name} Lv.${o.nextLevel}`, detail: PASSIVES[o.id].desc };
+      return { title: `${PASSIVES[o.id].name} Lv.${o.nextLevel}/${TUNING.growth.passiveMaxLevel}`, detail: `${PASSIVES[o.id].desc}${o.nextLevel === 1 ? ' (NEW, 공통 패시브)' : ''}` };
     case 'heal':
-      return { title: '츄르 한 입', detail: 'HP 25 회복 (후보 부족 시 대체, TEMP)' };
+      return { title: '츄르 한 입', detail: 'HP 25 회복 (모든 후보가 최대일 때 대체 보상, 미정·TEMP)' };
     case 'camp':
       return { title: `${CAMP_SKILLS[o.id].name}${o.id === 'repair' ? '' : ` Lv.${o.nextLevel}`}`, detail: CAMP_SKILLS[o.id].desc };
   }

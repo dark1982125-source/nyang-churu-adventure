@@ -69,7 +69,7 @@ describe('처치 카운트·웨이브 진행', () => {
   });
 
   test('3웨이브를 순서대로 지나 보스 처치 후 클리어, 지정 처치 대상 전부 처치', () => {
-    const { battle: b } = runBot({ seed: 1 });
+    const { battle: b } = runBot({ seed: 2 });
     expect(b.mode).toBe('victory');
     expect(b.killsRequired).toBe(b.requiredTotal);
     const order = b.log.filter((l) => ['waveStart', 'waveClear'].includes(l.type)).map((l) => `${l.type}${l.detail}`);
@@ -77,7 +77,7 @@ describe('처치 카운트·웨이브 진행', () => {
   });
 
   test('왕먼지 슬라임 분열 자식까지 추적하고, 자식이 남으면 웨이브가 끝나지 않는다', () => {
-    const { battle: b } = runBot({ seed: 1 });
+    const { battle: b } = runBot({ seed: 2 });
     const split = b.log.find((l) => l.type === 'split')!;
     expect(split.value).toBe(3);
     expect(b.childrenSpawned).toBe(3);
@@ -101,8 +101,8 @@ describe('처치 카운트·웨이브 진행', () => {
 });
 
 describe('적 통과 감지', () => {
-  test('점프로 적을 넘으면 통과가 기록되고, 레이저가 처리해 진행 불가가 생기지 않는다', () => {
-    const b = fresh();
+  test('비교안(jumpPass): 점프로 적을 넘으면 통과가 기록되고, 레이저가 처리해 진행 불가가 생기지 않는다', () => {
+    const b = fresh(3, (s) => { s.settings.passPolicy = 'jumpPass'; });
     b.mode = 'wave';
     const e = (b as any).spawnEnemy('dustSlime', 0, true, b.player.x + 40);
     e.hp = 80; // 기본 공격으로 먼저 죽지 않게
@@ -113,11 +113,78 @@ describe('적 통과 감지', () => {
     step(b, 15);
     expect(b.enemies.includes(e)).toBe(false);
   });
+
+  test('기본안(frontBlock): 호냥이가 공중에 있어도 적은 앞면에서 멈추고 뒤로 넘어가지 않는다', () => {
+    const b = fresh();
+    expect(b.passPolicy).toBe('frontBlock');
+    b.mode = 'wave';
+    const e = (b as any).spawnEnemy('meteorRat', 0, true, b.player.x + 60);
+    e.hp = 9999;
+    for (let t = 0; t < 2; t += DT) { b.player.y = 200; b.player.vy = 0; b.update(DT, NO_INPUT); }
+    expect(e.passed).toBe(false);
+    expect(e.x).toBeGreaterThan(b.player.x);
+    expect(b.log.some((l) => l.type === 'pass')).toBe(false);
+    // 착지해도 적 위에 겹치지 않는다(앞면 접촉 거리 유지)
+    b.player.y = 0;
+    b.update(DT, NO_INPUT);
+    expect(e.x - b.player.x).toBeGreaterThanOrEqual((TUNING.player.width + e.def.width) / 2 - 2);
+  });
+
+  test('기본안(frontBlock): 여러 시드 한 판 동안 통과가 한 번도 일어나지 않는다', () => {
+    for (const seed of [2, 4, 5]) {
+      const { battle: b } = runBot({ seed });
+      expect(b.log.filter((l) => l.type === 'pass')).toHaveLength(0);
+      expect(b.enemies.every((e) => e.x >= b.player.x)).toBe(true);
+    }
+  });
+});
+
+describe('보스 돌 투척(원안: 캠프를 향한 큰 돌, 공중 펀치 파괴)', () => {
+  function bossFight() {
+    const b = fresh();
+    b.mode = 'wave';
+    const boss = (b as any).spawnEnemy('stompSole', 2, true, b.player.x + 400);
+    boss.hp = 99999;
+    boss.cdA = 999; // 충격파 패턴은 끈다
+    boss.cdB = 0;
+    return { b, boss };
+  }
+
+  test('큰 돌은 캠프로 날아가 캠프(배리어 포함)에 피해를 준다(호냥이가 가만히 있을 때)', () => {
+    const { b } = bossFight();
+    // 호냥이는 제자리(지상). 돌은 펀치 높이 위로 지나간다
+    let saw = false;
+    let before = 0;
+    let after = 0;
+    for (let t = 0; t < 8 && !b.log.some((l) => l.type === 'rockHitCamp'); t += DT) {
+      before = b.camp.mental + b.camp.shield;
+      b.update(DT, NO_INPUT);
+      after = b.camp.mental + b.camp.shield;
+      if (b.hazards.some((h) => h.kind === 'bigRock')) saw = true;
+    }
+    expect(saw).toBe(true);
+    expect(b.log.some((l) => l.type === 'rockHitCamp')).toBe(true);
+    expect(after).toBeLessThan(before);
+  });
+
+  test('점프한 호냥이의 기본 공격(공중 펀치)으로 큰 돌을 부술 수 있다', () => {
+    const { b, boss } = bossFight();
+    b.player.x = boss.x - 170; // 보스 가까이에서는 막 던진 돌이 낮게 지나간다
+    let broken = false;
+    for (let t = 0; t < 10 && !broken; t += DT) {
+      const rock = b.hazards.find((h) => h.kind === 'bigRock');
+      const jump = !!rock && rock.x > b.player.x && rock.x - b.player.x < 110 && rock.y > 85;
+      b.update(DT, { forward: false, jump, ult: null });
+      broken = b.log.some((l) => l.type === 'rockBroken');
+    }
+    expect(broken).toBe(true);
+    expect(b.log.some((l) => l.type === 'rockHitCamp')).toBe(false);
+  });
 });
 
 describe('구출', () => {
   test('보스 처치 → 열쇠 → 감옥 개방 → 구출 공개 → 클리어 순서', () => {
-    const { battle: b } = runBot({ seed: 1 });
+    const { battle: b } = runBot({ seed: 2 });
     const idx = (t: string) => b.log.findIndex((l) => l.type === t);
     const bossKill = b.log.findIndex((l) => l.type === 'kill' && l.detail === '쿵쿵 돌발바닥');
     expect(bossKill).toBeGreaterThan(-1);

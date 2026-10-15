@@ -4,8 +4,13 @@ import { buildLoadout, newSave, type SaveData } from '../src/meta/save';
 /** 테스트용 단순 조작 봇: 계속 전진, 충격파가 가까우면 점프, 선택창은 전용 기술 우선. */
 export function botInput(b: Battle): InputState {
   const p = b.player;
-  const wave = b.hazards.find((h) => h.vx < 0 && h.x > p.x && h.x - p.x < 70 + h.radius);
-  return { forward: true, jump: !!wave, ult: b.ultGauge >= 100 ? 0 : null };
+  // 충격파가 가까우면 점프
+  const wave = b.hazards.some((h) => h.kind === 'shockwave' && h.x > p.x && h.x - p.x < 70 + h.radius);
+  // 캠프로 날아가는 큰 돌이 머리 위 가까이 오면 점프해서 공중 펀치
+  const rock = b.hazards.some((h) => h.kind === 'bigRock' && h.x > p.x && h.x - p.x < 110 && h.y > 85);
+  // 구르는 쥐가 굴러오면 점프로 피한다
+  const roll = b.enemies.some((e) => e.state === 'roll' && e.x > p.x && e.x - p.x < 120);
+  return { forward: true, jump: wave || rock || roll, ult: b.ultGauge >= 100 ? 0 : null };
 }
 
 export function botChoose(b: Battle): void {

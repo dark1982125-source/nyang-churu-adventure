@@ -72,7 +72,7 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     hp: 240, speed: 34, width: 64, height: 50, contactDamage: 10, contactInterval: 0.9,
     catnip: 8, gearChance: 1,
     loot: [
-      { id: 'hardJelly', chance: 1, min: 1, max: 2 },
+      { id: 'hardJelly', chance: 1, min: 3, max: 5 }, // 단단젤리 일반 난도 엘리트 100% 3~5 (확정 초기 설정)
       { id: 'softJelly', chance: 1, min: 1, max: 2 },
       { id: 'nyangJelly', chance: 1, min: 3, max: 5 },
     ],
@@ -96,8 +96,8 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
 export const BOSS_PATTERNS = {
   /** 발 구르기 → 지면을 따라 왼쪽으로 이동하는 충격파. 점프로 피한다. */
   shockwave: { cooldown: 3.6, telegraph: 0.8, speed: 260, width: 40, height: 30, damage: 14, campDamage: 4 },
-  /** 돌 던지기 → 호냥이 앞에 그림자 예고 후 낙하, 왼쪽으로 굴러온다. 점프로 넘는다. */
-  rockThrow: { cooldown: 5.5, telegraph: 1.0, count: 2, landAhead: 70, spread: 30, stagger: 0.7, radius: 18, height: 34, rollSpeed: 200, damage: 12, campDamage: 3 },
+  /** 돌 투척(원안): 캠프를 향해 큰 돌을 포물선으로 던진다. 호냥이가 공중 펀치·기술로 부술 수 있다. */
+  rockThrow: { cooldown: 5.5, telegraph: 0.9, duration: 3.2, startY: 110, endY: 60, arc: 140, radius: 20, hp: 10, campDamage: 14 },
 } as const;
 
 /** 돌돌 운석쥐 구르기(TEMP). 점프 중이면 피해 없이 멈춘다(뒤로 넘어가지 않음). */

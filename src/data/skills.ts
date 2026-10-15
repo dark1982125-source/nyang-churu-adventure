@@ -76,13 +76,30 @@ export const GLOVE: WeaponDef = {
 
 export const WEAPONS: Record<string, WeaponDef> = { [GLOVE.id]: GLOVE };
 
-/** 공통 패시브(판 한정). 보유 한도는 미정이라 TUNING.growth.passiveSlotLimit로 분리. */
-export type PassiveId = 'vitality' | 'energyFlow' | 'luckyBell' | 'sharpClaws';
+/**
+ * 호냥이 공통 패시브 14종(패시브-확정정리.md). 한 판 최대 5종·각 Lv.5, 등급 진화 없음.
+ * 적용 범위는 확정, 레벨당 수치는 TUNING.passives(TEMP).
+ */
+export type PassiveId =
+  | 'attack' | 'skillDamage' | 'attackSpeed' | 'critChance' | 'critDamage'
+  | 'maxHp' | 'hpRegen' | 'defense' | 'evasion' | 'maxEnergy'
+  | 'energyRegen' | 'luck' | 'pickupRadius' | 'cooldown';
+
 export const PASSIVES: Record<PassiveId, { name: string; desc: string }> = {
-  vitality: { name: '말랑 체력', desc: '최대 HP +15, 즉시 15 회복 (TEMP)' },
-  energyFlow: { name: '기력 순환', desc: '냥기력 회복 +25% (TEMP)' },
-  luckyBell: { name: '행운의 꼬리', desc: '판 임시 행운 +2 (TEMP)' },
-  sharpClaws: { name: '날카로운 발톱', desc: '모든 피해 +8% (TEMP)' },
+  attack: { name: '공격력 증가', desc: '기본 공격·전용 스킬·공격 궁극기 기초 공격력' },
+  skillDamage: { name: '스킬 피해량 증가', desc: '무기 전용 스킬에만 추가 피해' },
+  attackSpeed: { name: '공격속도 증가', desc: '기본 공격 주기만 단축' },
+  critChance: { name: '치명타 확률 증가', desc: '호냥이 직접 타격의 치명타 확률' },
+  critDamage: { name: '치명타 피해 증가', desc: '치명타 피해 배율' },
+  maxHp: { name: '최대 체력 증가', desc: '최대 HP 증가분만큼 현재 HP도 증가' },
+  hpRegen: { name: '체력 회복력 증가', desc: '자연 HP 회복 활성화·초당 회복량 증가' },
+  defense: { name: '방어력 증가', desc: '받는 피해 감소 (계산식 미정)' },
+  evasion: { name: '회피 확률 증가', desc: '적 직접 공격 피해·동반 상태이상 무효' },
+  maxEnergy: { name: '최대 냥기력 증가', desc: '최대 기력 증가분만큼 현재 기력도 증가' },
+  energyRegen: { name: '냥기력 회복력 증가', desc: '기본 기력 자연 회복 속도 강화' },
+  luck: { name: '행운 증가', desc: '희귀 스킬 등장·레어 드롭' },
+  pickupRadius: { name: '수집 범위 증가', desc: '반경 안 모든 드롭 흡인' },
+  cooldown: { name: '스킬 쿨타임 감소', desc: '무기 전용 스킬 쿨타임만' },
 };
 
 /** 캠프 선택창 후보(캠프 경험치). 캠프 스킬 등급/행운 적용은 미정이라 단순 레벨만 둔다. */

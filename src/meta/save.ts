@@ -2,7 +2,9 @@ import type { CompanionId } from '../data/companions';
 import type { CurrencyId, MaterialId } from '../data/items';
 import type { UltimateId } from '../data/skills';
 import { NODE_BY_ID } from '../data/progression';
-import { TUNING, type AdvanceMode } from '../config/tuning';
+import { TUNING, type AdvanceMode, type PassPolicy } from '../config/tuning';
+import type { WeaponId } from '../data/weapons';
+import { equippedWeaponAttackMul } from './forge';
 
 /**
  * 영구 저장 상태. 판 상태(RunState, sim/battle.ts)와 완전히 분리된다.
@@ -12,7 +14,12 @@ export interface SaveData {
   version: 1;
   currencies: Record<CurrencyId, number>;
   materials: Partial<Record<MaterialId, number>>;
-  blueprints: string[];
+  blueprints: WeaponId[];
+  /** 보유 무기와 강화 상태. fails: 목표 단계별 연속 실패 횟수(성공 시 초기화) */
+  weapons: Partial<Record<WeaponId, { level: number; fails: Record<number, number> }>>;
+  /** 장비 슬롯. 보호구·액세서리는 제작표 미정이라 비어 있다. 코스튬 별도. */
+  equipment: { weapon: WeaponId; body: string | null; feet: string | null; accessory: string | null; costume: string | null };
+  flags: { forgeVisited: boolean };
   rescued: CompanionId[];
   /** 일반 난이도 최초 클리어한 챕터 */
   clearedChapters: number[];
@@ -24,7 +31,7 @@ export interface SaveData {
   settledRunIds: number[];
   nextRunId: number;
   stats: { runs: number; clears: number; defeats: number };
-  settings: { advanceMode: AdvanceMode; bgmVolume: number; sfxVolume: number };
+  settings: { advanceMode: AdvanceMode; passPolicy: PassPolicy; bgmVolume: number; sfxVolume: number };
 }
 
 export function newSave(): SaveData {
@@ -33,6 +40,9 @@ export function newSave(): SaveData {
     currencies: { nyangJelly: 0, goldenCatnip: 0, golgolGear: 0 },
     materials: {},
     blueprints: [],
+    weapons: { starterGlove: { level: 0, fails: {} } },
+    equipment: { weapon: 'starterGlove', body: null, feet: null, accessory: null, costume: null },
+    flags: { forgeVisited: false },
     rescued: [],
     clearedChapters: [],
     hardUnlocked: [],
@@ -41,7 +51,7 @@ export function newSave(): SaveData {
     settledRunIds: [],
     nextRunId: 1,
     stats: { runs: 0, clears: 0, defeats: 0 },
-    settings: { advanceMode: TUNING.defaultAdvanceMode, bgmVolume: 0.6, sfxVolume: 0.8 },
+    settings: { advanceMode: TUNING.defaultAdvanceMode, passPolicy: TUNING.defaultPassPolicy, bgmVolume: 0.6, sfxVolume: 0.8 },
   };
 }
 
@@ -87,6 +97,9 @@ export function loadSave(storage: SaveStorage): SaveData {
       ...parsed,
       currencies: { ...base.currencies, ...parsed.currencies },
       materials: { ...parsed.materials },
+      weapons: { ...base.weapons, ...parsed.weapons },
+      equipment: { ...base.equipment, ...parsed.equipment },
+      flags: { ...base.flags, ...parsed.flags },
       stats: { ...base.stats, ...parsed.stats },
       settings: { ...base.settings, ...parsed.settings },
       version: 1,
@@ -148,6 +161,10 @@ export interface Loadout {
   ultimates: UltimateId[];
   rescued: CompanionId[];
   advanceMode: AdvanceMode;
+  passPolicy: PassPolicy;
+  weapon: WeaponId;
+  /** 장착 무기 기본 공격력·강화 보너스 배율 */
+  weaponAttackMul: number;
 }
 
 export function buildLoadout(save: SaveData): Loadout {
@@ -160,5 +177,8 @@ export function buildLoadout(save: SaveData): Loadout {
     ultimates: [...save.equippedUltimates].slice(0, TUNING.ultimate.maxEquipped),
     rescued: [...save.rescued],
     advanceMode: save.settings.advanceMode,
+    passPolicy: save.settings.passPolicy,
+    weapon: save.equipment.weapon,
+    weaponAttackMul: equippedWeaponAttackMul(save),
   };
 }

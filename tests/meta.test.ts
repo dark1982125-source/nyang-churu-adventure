@@ -52,11 +52,11 @@ describe('정산', () => {
 });
 
 describe('실패 → 영구 성장 → 재도전 루프', () => {
-  test('실패 판의 재화로 영구 노드를 사고, 다음 판 출격 능력치에 반영된다. 임시 성장은 이어지지 않는다', () => {
+  test('판 결과의 재화로 영구 노드를 사고, 다음 판 출격 능력치에 반영된다. 임시 성장은 이어지지 않는다', () => {
     const storage = memoryStorage();
     const save = loadSave(storage);
     // 1판: 봇이 진행한 결과(성공·실패와 무관하게 재화가 남는지 확인)
-    const first = runBot({ save, seed: 3 }).battle;
+    const first = runBot({ save, seed: 2 }).battle;
     const r1 = first.result();
     settleRun(save, { ...r1, runId: issueRunId(save) });
     writeSave(storage, save);

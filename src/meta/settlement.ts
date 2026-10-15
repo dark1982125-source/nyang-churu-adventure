@@ -1,5 +1,6 @@
-import type { LootId, MaterialId, CurrencyId } from '../data/items';
-import { CURRENCY_NAMES } from '../data/items';
+import { isCurrency, type LootId, type MaterialId } from '../data/items';
+import type { WeaponId } from '../data/weapons';
+import { firstClearBlueprints, specialClearRewards } from './forge';
 import type { RunResult } from '../sim/battle';
 import type { SaveData } from './save';
 
@@ -10,6 +11,8 @@ export interface SettlementSummary {
   newlyRescued: string | null;
   firstClear: boolean;
   loot: Partial<Record<LootId, number>>;
+  blueprints: WeaponId[];
+  specials: MaterialId[];
 }
 
 const MAX_SETTLED_IDS = 50;
@@ -21,7 +24,7 @@ const MAX_SETTLED_IDS = 50;
  * - 판 안 임시 레벨·기술·다시냥 방울은 Battle 객체와 함께 버려진다(저장에 없음)
  */
 export function settleRun(save: SaveData, result: RunResult): SettlementSummary {
-  const summary: SettlementSummary = { applied: false, duplicate: false, newlyRescued: null, firstClear: false, loot: result.loot };
+  const summary: SettlementSummary = { applied: false, duplicate: false, newlyRescued: null, firstClear: false, loot: result.loot, blueprints: [], specials: [] };
   if (save.settledRunIds.includes(result.runId)) {
     summary.duplicate = true;
     return summary;
@@ -29,8 +32,8 @@ export function settleRun(save: SaveData, result: RunResult): SettlementSummary 
 
   for (const [id, n] of Object.entries(result.loot) as [LootId, number][]) {
     if (!n) continue;
-    if (id in CURRENCY_NAMES) save.currencies[id as CurrencyId] += n;
-    else save.materials[id as MaterialId] = (save.materials[id as MaterialId] ?? 0) + n;
+    if (isCurrency(id)) save.currencies[id] += n;
+    else save.materials[id] = (save.materials[id] ?? 0) + n;
   }
 
   save.stats.runs++;
@@ -43,6 +46,15 @@ export function settleRun(save: SaveData, result: RunResult): SettlementSummary 
     if (!save.clearedChapters.includes(result.chapterId)) {
       save.clearedChapters.push(result.chapterId);
       summary.firstClear = true;
+      // 일반 난도 최초 클리어 설계도(1회 등록)
+      for (const bp of firstClearBlueprints(result.chapterId)) {
+        if (!save.blueprints.includes(bp)) { save.blueprints.push(bp); summary.blueprints.push(bp); }
+      }
+    }
+    // 지정 챕터 반복 클리어 특별 재료: 매 클리어 1개, 행운 미적용. 전설용은 본편 Ch 8 이후.
+    for (const m of specialClearRewards(result.chapterId, 'normal', save.clearedChapters.includes(8))) {
+      save.materials[m] = (save.materials[m] ?? 0) + 1;
+      summary.specials.push(m);
     }
     // 챕터 일반 완료 시 해당 고난도 해금(고난도 자체는 미구현)
     if (!save.hardUnlocked.includes(result.chapterId)) save.hardUnlocked.push(result.chapterId);

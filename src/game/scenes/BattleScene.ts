@@ -4,7 +4,8 @@ import { offerLabel } from '../../sim/choices';
 import { buildLoadout } from '../../meta/save';
 import { issueRunId, settleRun } from '../../meta/settlement';
 import { TUNING } from '../../config/tuning';
-import { ULTIMATES } from '../../data/skills';
+import { PASSIVES, ULTIMATES, type PassiveId } from '../../data/skills';
+import { BOSS_PATTERNS } from '../../data/enemies';
 import { store } from '../store';
 import { sound } from '../sound';
 import { button, COLORS, FONT, text } from '../ui';
@@ -219,23 +220,25 @@ export class BattleScene extends Phaser.Scene {
       const hx = sx(h.x);
       if (h.kind === 'shockwave') {
         g.fillStyle(0xd9c27a, 0.9).fillTriangle(hx - h.radius, GROUND, hx + h.radius, GROUND, hx, GROUND - 30);
-      } else if (h.timer > 0) {
-        g.fillStyle(0x000000, 0.25).fillEllipse(hx, GROUND - 2, h.radius * 2 * (1.4 - h.timer * 0.4), 10);
-        g.fillStyle(0x8c8174, 1).fillCircle(hx, GROUND - h.radius - h.timer * 220, h.radius);
       } else {
-        g.fillStyle(0x8c8174, 1).fillCircle(hx, GROUND - h.radius, h.radius);
-        g.lineStyle(2, 0x5d554b, 1).strokeCircle(hx, GROUND - h.radius, h.radius);
+        // 큰 돌: 캠프를 향해 포물선으로 날아온다. 착탄 지점(캠프)에 그림자, 남은 내구도 표시.
+        const tx = sx(h.targetX);
+        g.fillStyle(0xff4f4f, 0.18 + 0.25 * h.progress).fillEllipse(tx, GROUND - 2, 70, 12);
+        g.fillStyle(0x8c8174, 1).fillCircle(hx, sy(h.y), h.radius);
+        g.lineStyle(3, 0x5d554b, 1).strokeCircle(hx, sy(h.y), h.radius);
+        this.bar(g, hx - 20, sy(h.y) - h.radius - 10, 40, 5, h.hp / BOSS_PATTERNS.rockThrow.hp, 0xffb36b);
       }
     }
 
     // 드롭
     for (const p of b.pickups) {
       const px = sx(p.x), py = sy(p.y) - 8;
-      const col = { catnip: 0x6fcf6a, gear: 0x9aa0a8, bell: 0xffd34d, key: 0xffe066, capsule: 0xff9cc2 }[p.kind];
+      const col = { catnip: 0x6fcf6a, gear: 0x9aa0a8, bell: 0xffd34d, key: 0xffe066, capsule: 0xff9cc2, loot: 0xc7a0ff }[p.kind];
       if (p.kind === 'gear') g.fillStyle(col, 1).fillCircle(px, py, 6).fillStyle(0x5b5f66, 1).fillCircle(px, py, 2);
       else if (p.kind === 'key') { g.fillStyle(col, 1).fillCircle(px - 6, py, 7).fillRect(px - 2, py - 2, 16, 4); }
       else if (p.kind === 'bell') { g.fillStyle(col, 1).fillCircle(px, py, 9).fillStyle(0x7fe0c9, 1).fillRect(px - 8, py - 11, 16, 3); }
       else if (p.kind === 'capsule') { g.fillStyle(col, 1).fillRoundedRect(px - 10, py - 6, 20, 12, 6); }
+      else if (p.kind === 'loot') { g.fillStyle(col, 1).fillRoundedRect(px - 7, py - 7, 14, 14, 4).lineStyle(1, 0xffffff, 0.8).strokeRoundedRect(px - 7, py - 7, 14, 14, 4); }
       else g.fillStyle(col, 1).fillEllipse(px, py, 9, 12);
     }
 
@@ -388,7 +391,13 @@ export class BattleScene extends Phaser.Scene {
       const cd = b.skillCd[s.id] ?? 0;
       return `${def.name}${cd > 0 ? ` ${cd.toFixed(1)}s` : ' ✓'}`;
     }).join(' · ');
-    this.hudTexts.note.setText(`전용 기술 ${b.skills.exclusives.length}/3: ${skills || '없음'}   |   UI 배치·도형은 검토용 임시물`);
+    const passives = (Object.entries(b.skills.passives) as [PassiveId, number][])
+      .filter(([, lv]) => lv > 0).map(([id, lv]) => `${PASSIVES[id].name.replace(' 증가', '').replace(' 감소', '')} ${lv}`).join(' · ');
+    const lootKinds = Object.keys(b.loot).filter((k) => k !== 'nyangJelly').length;
+    this.hudTexts.note.setText(
+      `기본 Lv.${b.skills.basicLevel} | 전용 ${b.skills.exclusives.length}/3: ${skills || '없음'}\n` +
+      `패시브 ${passives ? passives.split(' · ').length : 0}/5: ${passives || '없음'} | 주운 재료 ${lootKinds}종 (판 종료 시 정산)`,
+    );
   }
 
   // ───────────────────────── 선택창

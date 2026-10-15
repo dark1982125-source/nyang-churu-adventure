@@ -13,9 +13,18 @@ export type AdvanceMode =
   /** TEMP: 자동으로 오른쪽 전진, 전방에 적이 있으면 정지 */
   | 'auto';
 
+/** 미정: 적이 호냥이를 지나쳤을 때의 처리. 비교용 임시 선택지. */
+export type PassPolicy =
+  /** TEMP 추천 테스트안: 적은 호냥이 중심을 넘어 뒤로 가지 못한다(점프 중이면 밀려남) */
+  | 'frontBlock'
+  /** TEMP 이전 안: 점프 중에는 아래로 지나갈 수 있고, 삐콩이 레이저가 뒤쪽 적을 우선 조준 */
+  | 'jumpPass';
+
 export const TUNING = {
   /** 미정: 자동/수동 전진. 캠프 화면 설정에서 바꿀 수 있는 검토용 옵션. */
   defaultAdvanceMode: 'hold' as AdvanceMode,
+  /** 미정: 지나간 적 처리. 캠프 화면 설정에서 비교 가능. */
+  defaultPassPolicy: 'frontBlock' as PassPolicy,
 
   world: {
     gravity: 1500, // TEMP
@@ -35,6 +44,10 @@ export const TUNING = {
     maxEnergy: 100, // TEMP 냥기력 최대치
     energyRegen: 6, // TEMP 초당 자연 회복
     baseLuck: 0, // TEMP 영구 기본 행운 시작값
+    baseCritChance: 0.05, // TEMP
+    baseCritMultiplier: 1.5, // TEMP
+    /** 기본 공격 세로 판정: 호냥이 머리 위로 이만큼 더 닿는다(공중 펀치) */
+    punchReachUp: 45, // TEMP
   },
 
   basicAttack: {
@@ -72,9 +85,8 @@ export const TUNING = {
     /** 캠프 레벨업 필요 경험치(작은 톱니) */
     campXpCurve: (level: number) => 3 + level * 2, // TEMP
     exclusiveSlots: 3, // CONFIRMED 전용 5종 중 최대 3종
-    /** 미정: 공통 패시브 보유 한도. null = 제한 없음(임시). 3칸 확정 아님. */
-    passiveSlotLimit: null as number | null,
-    passiveMaxLevel: 5, // TEMP
+    passiveSlotLimit: 5, // CONFIRMED 공통 패시브 최대 5종
+    passiveMaxLevel: 5, // CONFIRMED 각 Lv.5, 등급 진화 없음
     campSkillMaxLevel: 5, // TEMP 미정: 캠프 스킬 등급 체계
     /** 등급별 피해 배율. 일반 Lv1~3, 유니크 Lv1~3, 전설 */
     gradeDamage: { normal: [1.0, 1.25, 1.5], unique: [1.9, 2.2, 2.5], legend: [3.2] }, // TEMP
@@ -101,8 +113,27 @@ export const TUNING = {
     eliteDropChance: 0.15, // TEMP
   },
 
+  /** 공통 패시브 레벨당 효과. 적용 범위는 확정, 수치·상한은 전부 TEMP. */
+  passives: {
+    attack: 0.08, // 기본 공격·전용 스킬·공격 궁극기 +8%/Lv
+    skillDamage: 0.1, // 전용 스킬만 +10%/Lv
+    attackSpeed: 0.08, // 기본 공격 주기 -8%/Lv
+    critChance: 0.05, // +5%p/Lv
+    critDamage: 0.2, // 치명타 배율 +0.2/Lv
+    maxHp: 15, // +15/Lv, 현재 HP도 같이 증가
+    hpRegen: 0.8, // 초당 회복량/Lv (습득 시에만 자연 회복)
+    defense: 0.06, // 받는 피해 -6%/Lv (계산식 미정)
+    evasion: 0.04, // +4%p/Lv
+    maxEnergy: 12, // +12/Lv, 현재 기력도 같이 증가
+    energyRegen: 0.2, // 기본 회복 속도 +20%/Lv
+    luck: 2, // +2/Lv
+    pickupRadius: 0.25, // 수집 반경 +25%/Lv
+    cooldown: 0.06, // 전용 스킬 쿨타임 -6%/Lv
+    caps: { evasion: 0.4, defense: 0.5, cooldown: 0.5, critChance: 0.6 }, // 미정 상한
+  },
+
   pickups: {
-    magnetRadius: 130, // TEMP
+    magnetRadius: 130, // TEMP 기본 수집 반경
     magnetSpeed: 420, // TEMP
     /** 화면 뒤로 놓친 드롭을 기록하는 거리 */
     missedBehind: 300,
