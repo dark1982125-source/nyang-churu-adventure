@@ -59,7 +59,7 @@ export class BattleScene extends Phaser.Scene {
     this.hudTexts.top = text(this, 16, 10, '', 15).setDepth(11);
     this.hudTexts.right = text(this, W - 16, 10, '', 15).setOrigin(1, 0).setDepth(11);
     this.hudTexts.banner = this.add.text(W / 2, 120, '', { fontFamily: FONT, fontSize: '24px', color: '#ffffff', stroke: '#3a2a4a', strokeThickness: 6, align: 'center', wordWrap: { width: 820 } }).setOrigin(0.5).setDepth(12);
-    this.hudTexts.note = text(this, 16, H - 22, '', 11, '#5a5470').setDepth(11);
+    this.hudTexts.note = text(this, 180, H - 34, '', 11, '#3d3852').setDepth(11);
 
     this.makeTouchControls();
   }
@@ -123,6 +123,7 @@ export class BattleScene extends Phaser.Scene {
       const map: Partial<Record<typeof l.type, Parameters<typeof sound.play>[0]>> = {
         kill: 'hit', skill: 'skill', levelUp: 'levelUp', campLevelUp: 'levelUp', eliteSpawn: 'warn',
         bell: 'bell', revive: 'bell', key: 'pickup', jailOpen: 'clear', victory: 'clear', ult: 'ult', waveStart: 'warn',
+        rockBroken: 'hit', rockHitCamp: 'hurt', loot: 'pickup',
       };
       const s = map[l.type];
       if (s) sound.play(s);

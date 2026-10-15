@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
 import type { LogEntry, RunResult } from '../../sim/battle';
 import type { SettlementSummary } from '../../meta/settlement';
-import { LOOT_NAMES, type LootId } from '../../data/items';
+import { LOOT_NAMES, MATERIAL_NAMES, type LootId } from '../../data/items';
+import { WEAPON_DEFS } from '../../data/weapons';
 import { COMPANIONS, type CompanionId } from '../../data/companions';
 import { button, COLORS, text } from '../ui';
 
@@ -24,7 +25,12 @@ export class ResultScene extends Phaser.Scene {
 
     const lootLines = (Object.entries(result.loot) as [LootId, number][]).filter(([, n]) => n > 0).map(([id, n]) => `${LOOT_NAMES[id]} +${n}`);
     text(this, 40, 120, '획득 (영구 보존)', 18, '#ffd9a0');
-    text(this, 40, 150, lootLines.length ? lootLines.join('\n') : '없음', 15);
+    // 실제로 주운 드롭만 정산된다. 특별 재료·설계도는 클리어 보상.
+    const extra = [
+      ...summary.specials.map((m) => `★ ${MATERIAL_NAMES[m]} +1 (클리어 보상)`),
+      ...summary.blueprints.map((id) => `📜 ${WEAPON_DEFS[id].name} 설계도`),
+    ];
+    text(this, 40, 150, [...(lootLines.length ? lootLines : ['없음']), ...extra].join('\n'), 14);
 
     const passes = log.filter((l) => l.type === 'pass').length;
     const missed = log.filter((l) => l.type === 'missedPickup').length;
@@ -34,9 +40,11 @@ export class ResultScene extends Phaser.Scene {
       `시간 ${result.time.toFixed(0)}초 · 호냥이 Lv.${result.heroLevel}`,
       `지정 처치 ${result.kills.required}/${result.kills.requiredTotal} · 분열 처치 ${result.kills.children}`,
       `호냥이를 지나친 적 ${passes} · 화면 밖 이탈 ${oob}`,
-      `놓친 드롭 ${missed}`,
+      `놓친 드롭 ${missed} (주운 것만 정산)`,
+      `큰 돌 파괴 ${log.filter((l) => l.type === 'rockBroken').length} · 캠프 명중 ${log.filter((l) => l.type === 'rockHitCamp').length}`,
+      `회피 ${log.filter((l) => l.type === 'evade').length} · 치명타 ${log.filter((l) => l.type === 'crit').length}`,
       '',
-      '임시 레벨·기술·다시냥 방울은 판 종료로 초기화됨',
+      '임시 레벨·기술·패시브·다시냥 방울은 판 종료로 초기화됨',
       summary.duplicate ? '※ 이미 정산된 판(중복 지급 없음)' : '',
       summary.firstClear ? '최초 클리어 · 고난도 Ch 1 해금(고난도 미구현)' : '',
     ].filter(Boolean).join('\n'), 14);
