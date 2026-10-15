@@ -68,14 +68,20 @@ describe('HP·기력 회복과 최대치', () => {
     expect(b.player.hp).toBe(50);
   });
 
-  test('패시브 습득 후에는 피격 직후에도 대기 없이 바로 회복한다', () => {
+  test('패시브 습득 후 회복은 틱 단위이고, 피격해도 틱 시간이 초기화되지 않는다(피격 대기시간 없음)', () => {
     const b = fresh();
     b.skills.passives.hpRegen = 1;
+    const interval = b.stats().regenInterval;
+    expect(interval).toBeCloseTo(TUNING.regen.tickHeal / TUNING.passives.hpRegen);
     b.player.hp = 50;
+    (b as any).rng.chance = () => false;
+    for (let t = 0; t < interval - 0.3; t += DT) b.update(DT, NO_INPUT);
+    expect(b.player.hp).toBe(50);
+    b.player.invuln = 0;
     b.damagePlayer(10);
     const afterHit = b.player.hp;
-    b.update(DT, NO_INPUT);
-    expect(b.player.hp).toBeGreaterThan(afterHit);
+    for (let t = 0; t < 0.4; t += DT) b.update(DT, NO_INPUT);
+    expect(b.player.hp).toBeCloseTo(afterHit + TUNING.regen.tickHeal);
   });
 
   test('냥기력은 패시브 없이도 자연 회복하고, 패시브로 더 빨라진다', () => {

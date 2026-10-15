@@ -6,13 +6,6 @@
  * `CONFIRMED` 주석으로 따로 표시한다.
  */
 
-/** 전진 방식. 확정 규칙은 hold. auto는 비교용 개발 도구로만 남긴다. */
-export type AdvanceMode =
-  /** CONFIRMED: 입력 중 오른쪽 전진, 놓으면 정지 */
-  | 'hold'
-  /** 비교 도구: 자동으로 오른쪽 전진, 전방에 적이 있으면 정지 */
-  | 'auto';
-
 /** 적·호냥이 상호 통과 처리. 확정 규칙은 frontBlock. jumpPass는 비교용 개발 도구로만 남긴다. */
 export type PassPolicy =
   /** CONFIRMED: 점프 중에도 적과 호냥이가 서로 넘어가 뒤에 남지 않는다 */
@@ -21,7 +14,6 @@ export type PassPolicy =
   | 'jumpPass';
 
 export const TUNING = {
-  defaultAdvanceMode: 'hold' as AdvanceMode, // CONFIRMED
   defaultPassPolicy: 'frontBlock' as PassPolicy, // CONFIRMED
 
   world: {
@@ -36,7 +28,7 @@ export const TUNING = {
     width: 36,
     height: 48,
     maxHp: 100, // TEMP
-    moveSpeed: 150, // TEMP 전진 속도
+    moveSpeed: 150, // TEMP 자동 전진 속도
     jumpVelocity: 560, // TEMP
     contactInvuln: 0.6, // TEMP 피격 후 무적
     maxEnergy: 100, // TEMP 냥기력 최대치
@@ -50,12 +42,33 @@ export const TUNING = {
 
   basicAttack: {
     interval: 0.45, // TEMP
-    range: 70, // TEMP
+    range: 100, // TEMP 8차: 70 → 100(자동 전진 교전 정차 거리와 같음, 일방 피격 감소)
     damage: 10, // TEMP
     /** Lv.1 시작, 최대 Lv.5, 등급 진화 없음 */
     maxLevel: 5, // CONFIRMED
     damagePerLevel: 0.2, // TEMP 레벨당 +20%
     intervalPerLevel: 0.04, // TEMP 레벨당 주기 감소
+  },
+
+  /**
+   * 자동 전진·교전 정차(CONFIRMED 8차 규칙, 수치 TEMP). 예전 입력 유지 전진은 폐기(옛 저장 설정은 불러올 때 지운다).
+   * 정차 거리 = 기본 공격 사거리(basicAttack.range)와 같은 값을 쓴다(별도 수치 없음).
+   */
+  advance: {
+    /** 교전 해제(전진 재개) 판정 여유: 사거리 + 이 거리 안에 칠 수 있는 적이 없을 때 재개 */
+    resumeMargin: 16, // TEMP
+    /** 웨이브 사이 이동 거리(웨이브 정리 지점에서 다음 웨이브 시작까지) */
+    travelGap: 360, // TEMP
+    /** 마지막 보스 처치 지점에서 감옥까지 */
+    jailGap: 420, // TEMP
+  },
+
+  /** 호냥이 밀쳐내기(CONFIRMED: 호냥이만 밀림·캠프 제자리·겹침 금지·경직 뒤 호위 위치 복귀 후 동기 전진). 수치 TEMP */
+  heroKnockback: {
+    /** 캠프와 겹치지 않는 최소 간격 여유(중심 간 거리 = (캠프 폭 + 호냥이 폭)/2 + 이 값) */
+    minGapMargin: 6, // TEMP
+    stagger: 0.35, // TEMP 경직 시간
+    returnSpeed: 220, // TEMP 호위 위치 복귀 속도
   },
 
   camp: {
@@ -184,37 +197,29 @@ export const TUNING = {
     caps: { attackSpeed: 0.5, regenInterval: 0.6, energyRegen: 1.5 }, // TEMP
   },
 
+  /** 상태이상 지속시간 저항(CONFIRMED 8차): 같은 상태는 곱연산 R = 1 - Π(1 - rᵢ), 상태별 따로 계산 */
+  resist: {
+    cap: 0.7, // TEMP 최종 감소 상한(테스트 기준)
+  },
+
   /**
-   * 미정 규칙의 시험 옵션(사용자 결정 전). 기본값은 지금 동작을 바꾸지 않는 쪽.
-   * - resist: 같은 종류 저항이 여러 장비에서 올 때 합산 방식·상한·빙결 최대시간과의 적용 순서.
-   * - enemyCrit: 적 치명타 발생 규칙. 확정 전이라 기본 꺼짐(조끼 +10 치명타 피해 감소는 꺼져 있으면 효과 없음).
-   * - heroKnockback: 호냥이가 밀려날 때 캠프 동기 이동과의 관계. 지금 호냥이를 미는 적은 없다(시험 진입점만).
+   * 적 치명타: 보류(꺼짐). 무작위 치명타·강공격 치명타 지정 모두 만들지 않는다.
+   * 누빔조끼 전설 '받는 치명타 피해 감소'는 미래 연결용으로만 남는다(지금은 효과 없음).
    */
-  undecided: {
-    resist: {
-      stacking: 'additive' as 'additive' | 'multiplicative', // TEMP 합산 / 곱연산(1-∏(1-r))
-      cap: 0.6, // TEMP 저항 합산 상한
-      /** 빙결: 'resistThenCap' 저항 뒤 최대시간 제한, 'capThenResist' 최대시간 제한 뒤 저항 */
-      freezeOrder: 'resistThenCap' as 'resistThenCap' | 'capThenResist', // TEMP
-    },
-    enemyCrit: {
-      enabled: false, // 미정: 적 치명타 없음이 기본
-      chance: 0.1, // TEMP(켰을 때만)
-      multiplier: 1.5, // TEMP
-      /** 'bonusOnly' 치명타 추가분만 감소, 'wholeHit' 치명타 피해 전체 감소 */
-      reduction: 'bonusOnly' as 'bonusOnly' | 'wholeHit', // TEMP
-    },
-    /**
-     * 체력 자동 회복 개시 조건: 회복 패시브 없이 햇살 방울 브로치만 끼었을 때 회복을 시작할지.
-     * false(지금): 브로치는 회복 간격만 줄이고, 회복 패시브가 있어야 회복한다. true면 soloRegen(초당)으로 단독 회복.
-     */
-    broochSoloRegen: false, // 미정
-    soloRegen: 0.5, // TEMP(켰을 때만) 기준 간격 기준 초당 회복량
-    heroKnockback: {
-      /** 'campStays' 캠프는 제자리(간격 줄어듦, 최소 간격에서 멈춤), 'campPushed' 캠프도 같이 밀려 간격 유지 */
-      campSync: 'campStays' as 'campStays' | 'campPushed', // TEMP
-      minGap: 60, // TEMP 호냥이-캠프 최소 간격
-    },
+  enemyCrit: {
+    enabled: false, // 보류(사용자 결정)
+    chance: 0.1, // TEMP(켰을 때만)
+    multiplier: 1.5, // TEMP
+    reduction: 'bonusOnly' as 'bonusOnly' | 'wholeHit', // TEMP
+  },
+
+  /**
+   * 체력 자동 회복(틱 방식). CONFIRMED: 햇살 방울 브로치만으로 느린 회복, 회복 패시브가 있으면 간격이 더 짧아진다.
+   * 회복 속도 증가는 틱 간격 단축이며 틱당 회복량은 늘리지 않는다. 수치 TEMP.
+   */
+  regen: {
+    tickHeal: 2, // TEMP 틱당 회복량(고정)
+    broochSoloInterval: 4, // TEMP 회복 패시브 없이 브로치만 낄 때 기본 틱 간격(초)
   },
 
   /**
@@ -248,10 +253,10 @@ export const TUNING = {
   },
 
   waves: {
-    /** 웨이브 시작 지점에서 더 전진할 수 있는 거리. 확정: 웨이브 중 호냥이·캠프 함께 정차 → 0 */
-    arenaLength: 0,
-    /** 전투 구역 끝에서 적 스폰 지점까지(화면 밖 전방) */
+    /** 호냥이 위치에서 적 스폰 지점까지(화면 오른쪽 끝 근처) */
     spawnAhead: 600, // TEMP
+    /** 엘리트/보스 등장 위치(호냥이 앞, 화면 안). 정차 대기 시간 단축용 */
+    finaleSpawnAhead: 380, // TEMP
     /** 일반 구간 → 엘리트/보스 등장 연출 시간. 이 동안 전투 타이머 전부 정지(확정), 길이는 TEMP */
     finaleIntro: 1.2, // TEMP
     /** 분열 적 세대 상한. 무한 분열 방지용 기술적 장치 */

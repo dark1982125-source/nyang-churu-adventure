@@ -88,7 +88,7 @@ describe('보스 처치(클리어 확정) 뒤 구출 중 앱 종료', () => {
     const { save, b } = playUntilConfirm(storage, 7);
     const journal = { ...save.activeRun!.loot };
     // 같은 판을 정상 진행으로 끝까지
-    while (!b.finished && b.t < 900) b.update(DT, { forward: true, jump: false, ult: null });
+    while (!b.finished && b.t < 900) b.update(DT, { jump: false, ult: null });
     expect(b.mode).toBe('victory');
     expect(b.result().loot).toEqual(journal);
     // 정상 경로 정산이 저널을 지우므로 이후 재실행 복귀 없음

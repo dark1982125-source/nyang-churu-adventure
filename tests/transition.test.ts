@@ -217,7 +217,7 @@ describe('웨이브·챕터 종료 경험치 (§3)', () => {
     expect(b.mode).not.toBe('defeat');
     const order: string[] = [];
     for (let i = 0; i < 60 * 60 && !b.finished; i++) {
-      b.update(DT, { forward: true, jump: false, ult: null });
+      b.update(DT, { jump: false, ult: null });
       const last = b.log[b.log.length - 1];
       if (last && ['key', 'jailOpen', 'victory'].includes(last.type) && order[order.length - 1] !== last.type) order.push(last.type);
     }

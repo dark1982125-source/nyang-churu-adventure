@@ -29,7 +29,6 @@ export class BattleScene extends Phaser.Scene {
   private textPool: Phaser.GameObjects.Text[] = [];
   private textUsed = 0;
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
-  private touchForward = false;
   private touchJump = false;
   private touchUlt: number | null = null;
   private choiceLayer: Phaser.GameObjects.Container | null = null;
@@ -61,7 +60,7 @@ export class BattleScene extends Phaser.Scene {
     this.hud = this.add.graphics().setDepth(10);
 
     const kb = this.input.keyboard!;
-    this.keys = kb.addKeys('RIGHT,D,SPACE,UP,W,ONE,TWO,THREE,ESC') as Record<string, Phaser.Input.Keyboard.Key>;
+    this.keys = kb.addKeys('SPACE,UP,W,ONE,TWO,THREE,ESC') as Record<string, Phaser.Input.Keyboard.Key>;
     this.input.addPointer(2);
 
     this.hudTexts.top = text(this, 16, 10, '', 15).setDepth(11);
@@ -108,9 +107,6 @@ export class BattleScene extends Phaser.Scene {
       r.on('pointerup', release);
       r.on('pointerout', release);
     };
-    if (this.battle.advanceMode === 'hold') {
-      mk(16, H - 120, 150, 96, '전진 ▶', () => { this.touchForward = true; }, () => { this.touchForward = false; });
-    }
     mk(W - 166, H - 120, 150, 96, '점프', () => { this.touchJump = true; }, () => undefined);
     const ults = this.battle.loadout.ultimateEnabled ? this.battle.loadout.ultimates : [];
     ults.forEach((id, i) => {
@@ -128,7 +124,7 @@ export class BattleScene extends Phaser.Scene {
     if (jd(k.THREE)) ult = 2;
     this.touchJump = false;
     this.touchUlt = null;
-    return { forward: k.RIGHT.isDown || k.D.isDown || this.touchForward, jump, ult };
+    return { jump, ult };
   }
 
   update(_time: number, deltaMs: number): void {
@@ -222,8 +218,10 @@ export class BattleScene extends Phaser.Scene {
     for (let x = -(camX % 40); x < W; x += 40) g.fillRect(x, GROUND, 20, 6);
 
     // 웨이브 구역 표시
-    b.chapter.waves.forEach((w, i) => {
-      const x = sx(w.triggerX);
+    // 다음 웨이브 지점은 앞 웨이브를 정리한 뒤 정해지므로 이동 구간에서만 표시한다
+    b.waveX.forEach((wx, i) => {
+      if (!(b.mode === 'travel' && i === b.waveIndex)) return;
+      const x = sx(wx);
       if (x > -50 && x < W + 50) {
         g.lineStyle(2, 0xffffff, 0.35).lineBetween(x, GROUND - 160, x, GROUND);
         this.t(x, GROUND - 172, `웨이브 ${i + 1}`, 12, '#ffffff');
@@ -232,8 +230,9 @@ export class BattleScene extends Phaser.Scene {
 
     // 감옥(구출 목표). 개방 전 정체 비공개.
     if (b.chapter.rescue) {
-      const jx = sx(b.chapter.rescue.jailX);
-      const farHint = jx > W - 20;
+      const jx = sx(b.jailX);
+      // 감옥 위치는 마지막 보스를 처치한 뒤 정해진다. 그 전에는 화면 끝 안내만
+      const farHint = jx > W - 20 || !['toJail', 'opening', 'revealed', 'victory'].includes(b.mode);
       const drawX = farHint ? W - 40 : jx;
       if (b.mode === 'revealed' || b.mode === 'victory') {
         this.drawCat(drawX, GROUND, 0xf1e4d0, 0x6ac0e0, 1, false, 'kosyot');
@@ -502,8 +501,10 @@ export class BattleScene extends Phaser.Scene {
       .filter(([, lv]) => lv > 0).map(([id, lv]) => `${PASSIVES[id].name.replace(' 증가', '').replace(' 감소', '')} ${lv}`).join(' · ');
     const lootKinds = Object.keys(b.loot).filter((k) => k !== 'nyangJelly').length;
     const st = b.stats();
+    const finaleStop = b.mode === 'wave' && b.waves[b.waveIndex]?.phase === 'finale';
+    const moveState = b.player.stagger > 0 ? '밀려남(경직)' : b.player.x < b.camp.x + TUNING.camp.followGap - 0.5 ? '호위 위치로 복귀' : finaleStop ? '엘리트/보스 정차' : b.engaged ? '교전 정차' : '자동 전진';
     this.hudTexts.note.setText(
-      `방어력 ${Math.round(st.defense)} (직접 피해 ×${st.damageTaken.toFixed(2)})` +
+      `[${moveState}] 방어력 ${Math.round(st.defense)} (직접 피해 ×${st.damageTaken.toFixed(2)})` +
       (b.heroStatus.effects.length ? ` | 상태: ${b.heroStatus.effects.map((e) => `${STATUS_NAMES[e.tag]}(${e.source}) ${e.remaining.toFixed(1)}s`).join(', ')}` : '') +
       (b.heroStatus.refreezeImmune > 0 ? ` | 재빙결 면역 ${b.heroStatus.refreezeImmune.toFixed(1)}s` : '') + '\n' +
       `기본 Lv.${b.skills.basicLevel} | 전용 ${b.skills.exclusives.length}/3: ${skills || '없음'}\n` +

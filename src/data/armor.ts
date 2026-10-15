@@ -4,8 +4,9 @@ import type { BlueprintSource, MaterialCount, SpecialReward } from './weapons';
 
 /**
  * 깡깡이 보호구 6종(보호구-6종-확정정리.md).
- * 확정: 이름·부위·제작 재료와 수량·기본 강화 재료·+5/+10 특별 재료·등급별로 붙는 효과 종류·개방 시점(모자·조끼·헬멧).
- * TEMP: 능력치 수치(TUNING.armor), 나머지 3종 설계도 시점(blueprint.kind = 'undecided').
+ * 확정: 이름·부위·제작 재료와 수량·기본 강화 재료·+5/+10 특별 재료·등급별로 붙는 효과 종류·개방 시점
+ * (모자·조끼 대장간, 스니커 Ch 3·헬멧 Ch 4·부츠 Ch 5·방탄갑옷 Ch 7 일반 최초 클리어).
+ * TEMP: 능력치 수치(TUNING.armor).
  * 강화 성공률·소모량·실패 보정·10회 보장은 무기 공통표(ENHANCE_TABLE/ENHANCE_RULES)를 쓰지만,
  * 효과는 무기 공격력 증가표가 아니라 아래 보호구별 효과를 쓴다.
  */
@@ -82,7 +83,7 @@ export const ARMOR_DEFS: Record<ArmorId, ArmorDef> = {
     enhanceMaterial: 'reinforcedBolt',
     special5: [m('toughFiber', 1)],
     special10: [m('captainVest', 1), m('fireLizardScale', 1)],
-    blueprint: { kind: 'undecided' },
+    blueprint: { kind: 'firstClear', chapter: 7 }, // CONFIRMED 8차: 일반 Ch 7 최초 클리어(챕터 미구현이라 정상 진행에서는 잠김)
     effects: { normal: ['defense'], unique: ['burn'], legend: ['maxHp'] },
     look: '귀여운 짧은 경갑',
   },
@@ -92,7 +93,7 @@ export const ARMOR_DEFS: Record<ArmorId, ArmorDef> = {
     enhanceMaterial: 'cloudCottonCandy',
     special5: [m('bouncyPad', 1)],
     special10: [m('cloudLeather', 1), m('snowInsole', 1)],
-    blueprint: { kind: 'undecided' },
+    blueprint: { kind: 'firstClear', chapter: 3 }, // CONFIRMED 8차: 일반 Ch 3 최초 클리어(챕터 미구현이라 정상 진행에서는 잠김)
     effects: { normal: ['evasion'], unique: ['slow'], legend: ['freeze'] },
     look: '둥근 앞코·두툼한 젤리 밑창',
   },
@@ -102,7 +103,7 @@ export const ARMOR_DEFS: Record<ArmorId, ArmorDef> = {
     enhanceMaterial: 'hardJelly',
     special5: [m('toughLeatherBoots', 1)],
     special10: [m('captainBoots', 1), m('steelWeb', 1)],
-    blueprint: { kind: 'undecided' },
+    blueprint: { kind: 'firstClear', chapter: 5 }, // CONFIRMED 8차: 일반 Ch 5 최초 클리어(챕터 미구현이라 정상 진행에서는 잠김)
     effects: { normal: ['defense'], unique: ['knockback'], legend: ['slow'] },
     look: '파스텔 카키·두꺼운 고무 밑창·짧은 발목 보호대',
   },

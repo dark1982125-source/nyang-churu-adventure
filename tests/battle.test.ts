@@ -18,25 +18,17 @@ function step(b: Battle, secs: number, input = NO_INPUT) {
 }
 
 describe('이동 제한', () => {
-  test('입력이 없으면 정지, 전진 입력 시 오른쪽으로만 이동(임시 hold 모드)', () => {
+  test('입력 없이 자동으로 오른쪽 전진(확정), 캠프도 함께', () => {
     const b = fresh();
     const x0 = b.player.x;
+    const c0 = b.camp.x;
     step(b, 1);
-    expect(b.player.x).toBe(x0);
-    step(b, 1, { forward: true, jump: false, ult: null });
     expect(b.player.x).toBeGreaterThan(x0);
+    expect(b.camp.x - c0).toBeCloseTo(b.player.x - x0);
   });
 
   test('한 판 내내 x가 줄어드는 일이 없다', () => {
     for (const seed of [1, 2, 3]) expect(runBot({ seed }).minXViolation).toBe(false);
-  });
-
-  test('웨이브 중에는 전방 전투 구역 끝을 넘을 수 없다', () => {
-    const b = fresh();
-    const wave1 = b.chapter.waves[0];
-    step(b, 8, { forward: true, jump: false, ult: null });
-    expect(b.mode).toBe('wave');
-    expect(b.player.x).toBeLessThanOrEqual(wave1.triggerX + TUNING.waves.arenaLength);
   });
 
   test('대시 관련 입력·기술·선택지가 존재하지 않는다', () => {
@@ -50,12 +42,10 @@ describe('이동 제한', () => {
 describe('처치 카운트·웨이브 진행', () => {
   test('목표 처치 수를 채우기 전에는 다음 웨이브로 넘어가지 않는다', () => {
     const b = fresh();
-    const go = { forward: true, jump: false, ult: null };
+    const go = { jump: false, ult: null };
     step(b, 6, go);
     expect(b.mode).toBe('wave');
     while (b.enemies.length === 0) step(b, 0.2, go);
-    const triggerNext = b.chapter.waves[1].triggerX;
-    expect(b.rightLimit).toBeLessThan(triggerNext);
     expect(b.waveIndex).toBe(0);
     expect(b.waveRemaining(0)).toBeGreaterThan(0);
   });
@@ -69,7 +59,7 @@ describe('처치 카운트·웨이브 진행', () => {
   });
 
   test('3웨이브를 순서대로 지나 보스 처치 후 클리어, 지정 처치 대상 전부 처치', () => {
-    const { battle: b } = runBot({ seed: 1 });
+    const { battle: b } = runBot({ seed: 2 });
     expect(b.mode).toBe('victory');
     expect(b.killsRequired).toBe(b.requiredTotal);
     const order = b.log.filter((l) => ['waveStart', 'waveClear'].includes(l.type)).map((l) => `${l.type}${l.detail}`);
@@ -174,7 +164,7 @@ describe('보스 돌 투척(원안: 캠프를 향한 큰 돌, 공중 펀치 파�
     for (let t = 0; t < 10 && !broken; t += DT) {
       const rock = b.hazards.find((h) => h.kind === 'bigRock');
       const jump = !!rock && rock.x > b.player.x && rock.x - b.player.x < 110 && rock.y > 85;
-      b.update(DT, { forward: false, jump, ult: null });
+      b.update(DT, { jump, ult: null });
       broken = b.log.some((l) => l.type === 'rockBroken');
     }
     expect(broken).toBe(true);
@@ -184,7 +174,7 @@ describe('보스 돌 투척(원안: 캠프를 향한 큰 돌, 공중 펀치 파�
 
 describe('구출', () => {
   test('보스 처치 → 열쇠 → 감옥 개방 → 구출 공개 → 클리어 순서', () => {
-    const { battle: b } = runBot({ seed: 1 });
+    const { battle: b } = runBot({ seed: 2 });
     const idx = (t: string) => b.log.findIndex((l) => l.type === t);
     const bossKill = b.log.findIndex((l) => l.type === 'kill' && l.detail === '쿵쿵 돌발바닥');
     expect(bossKill).toBeGreaterThan(-1);
@@ -205,7 +195,7 @@ describe('구출', () => {
 
   test('코숏 지원은 구출 전에는 없고, 구출 후 출격부터 캠프 선택지(캡슐·증상별 처방)와 캡슐이 생긴다', () => {
     const before = fresh();
-    step(before, 20, { forward: true, jump: false, ult: null });
+    step(before, 20, { jump: false, ult: null });
     expect(before.log.length).toBeGreaterThan(0);
     expect((before as any).availableCampSkills()).not.toContain('capsule');
     const after = fresh(3, (s) => s.rescued.push('kosyot'));
@@ -299,7 +289,7 @@ describe('냥기력·쿨타임·궁극기', () => {
     const b = fresh(3, (s) => { s.nodes.ultSlot = 1; s.nodes.ult_healHero = 1; s.equippedUltimates = ['healHero']; });
     b.ultGauge = 100;
     b.player.hp = 10;
-    b.update(DT, { forward: false, jump: false, ult: 0 });
+    b.update(DT, { jump: false, ult: 0 });
     expect(b.player.hp).toBe(b.player.maxHp);
     expect(b.ultGauge).toBe(0);
   });

@@ -11,7 +11,7 @@ import { MATERIAL_NAMES } from '../src/data/items';
 import { ENEMIES } from '../src/data/enemies';
 import { SPECIAL_REWARDS, WEAPON_DEFS } from '../src/data/weapons';
 import { TUNING } from '../src/config/tuning';
-import { enemyCritDamage, heroKnockback, resistedDuration } from '../src/sim/armorRules';
+import { enemyCritDamage, heroCampMinGap, heroKnockback, resistedDuration } from '../src/sim/armorRules';
 import type { RunResult } from '../src/sim/battle';
 
 const always = () => 0;
@@ -118,7 +118,7 @@ describe('등급별 효과(효과 종류 확정, 수치 TEMP) — 무기 공격�
 });
 
 describe('설계도·제작·강화(무기 공통 강화 규칙)', () => {
-  test('대장간 전에는 없음, 깡깡이 대장간에서 누빔모자·누빔조끼, 헬멧은 일반 Ch 4 최초 클리어, 나머지는 미정이라 지급 경로 없음', () => {
+  test('대장간 전에는 없음, 깡깡이 대장간에서 누빔모자·누빔조끼, 스니커 Ch 3·헬멧 Ch 4·부츠 Ch 5·방탄갑옷 Ch 7 일반 최초 클리어', () => {
     const before = newSave();
     before.rescued.push('kosyot');
     visitForge(before);
@@ -127,12 +127,22 @@ describe('설계도·제작·강화(무기 공통 강화 규칙)', () => {
 
     const s = forgeSave();
     expect(s.armorBlueprints.sort()).toEqual(['quiltHat', 'quiltVest']);
-    for (let ch = 1; ch <= 15; ch++) settleRun(s, victory(100 + ch, ch));
-    expect(s.armorBlueprints.sort()).toEqual(['explorerHelmet', 'quiltHat', 'quiltVest']);
-    for (const id of ['bulletArmor', 'squishySneaker', 'explorerBoots'] as ArmorId[]) {
-      expect(ARMOR_DEFS[id].blueprint.kind).toBe('undecided');
-      expect(canCraftArmor(s, id)).toBe('noBlueprint');
+    expect(canCraftArmor(s, 'squishySneaker')).toBe('noBlueprint');
+    const got: Record<number, string[]> = {};
+    for (let ch = 1; ch <= 15; ch++) {
+      const before = [...s.armorBlueprints];
+      settleRun(s, victory(100 + ch, ch));
+      got[ch] = s.armorBlueprints.filter((id) => !before.includes(id));
     }
+    expect(got[3]).toEqual(['squishySneaker']);
+    expect(got[4]).toEqual(['explorerHelmet']);
+    expect(got[5]).toEqual(['explorerBoots']);
+    expect(got[7]).toEqual(['bulletArmor']);
+    expect([1, 2, 6, 8, 9, 10, 11, 12, 13, 14, 15].every((ch) => got[ch].length === 0)).toBe(true);
+    // 반복 클리어로 다시 주지 않는다
+    settleRun(s, victory(200, 3));
+    expect(s.armorBlueprints.filter((id) => id === 'squishySneaker')).toHaveLength(1);
+    for (const id of ['bulletArmor', 'squishySneaker', 'explorerBoots'] as ArmorId[]) expect(ARMOR_DEFS[id].blueprint.kind).toBe('firstClear');
   });
 
   test('보호구 추가 전에 대장간을 이미 방문한 저장도 다음 방문에 보호구 설계도만 받는다', () => {
@@ -276,7 +286,7 @@ describe('장착·저장 — 스탯 중복·체력 무한 회복 없음', () => 
     let maxSeen = 0;
     for (let i = 0; i < 60 * 40; i++) {
       if (b.paused) b.choose(0);
-      b.update(1 / 60, { forward: true, jump: false, ult: null });
+      b.update(1 / 60, { jump: false, ult: null });
       expect(b.player.hp).toBeLessThanOrEqual(b.player.maxHp + 1e-9);
       maxSeen = Math.max(maxSeen, b.player.maxHp);
     }
@@ -332,17 +342,29 @@ describe('저항(지속시간 감소, 면역 아님)', () => {
     expect(b.heroStatus.get('slow', 'terrain')!.remaining).toBe(5);
   });
 
-  test('[미정 옵션] 빙결 적용 순서: 저항 뒤 최대시간 제한 / 최대시간 제한 뒤 저항', () => {
+  test('빙결(확정): 최대 빙결시간 제한을 먼저, 그다음 저항으로 단축 = min(원시간, 최대) × (1 - R)', () => {
     const r = { ...zero, freeze: 0.3 };
     const max = TUNING.status.freezeMaxDuration;
-    expect(Math.min(max, resistedDuration('freeze', 'enemySkill', 4, r, 'resistThenCap'))).toBeCloseTo(Math.min(max, 2.8));
-    expect(resistedDuration('freeze', 'enemySkill', 4, r, 'capThenResist')).toBeCloseTo(max * 0.7);
+    expect(resistedDuration('freeze', 'enemySkill', 4, r)).toBeCloseTo(Math.min(4, max) * 0.7);
+    expect(resistedDuration('freeze', 'enemySkill', 1, r)).toBeCloseTo(0.7);
+    // 전투에서도 같은 값(그 뒤 상태 쪽 최대시간 제한은 이미 그 아래라 영향 없음)
+    const s = forgeSave();
+    own(s, 'squishySneaker', 10);
+    equipArmor(s, 'squishySneaker');
+    const b = battle(s);
+    const R = b.loadout.armor.resist.freeze;
+    b.applyHeroStatus({ tag: 'freeze', source: '적', intensity: 1, duration: 4 });
+    expect(b.heroStatus.get('freeze', 'enemySkill')!.remaining).toBeCloseTo(max * (1 - R));
   });
 
-  test('[미정 옵션] 같은 종류 저항 합산: 합산/곱연산, 상한', () => {
-    expect(combineResist([0.2, 0.2], { stacking: 'additive', cap: 0.6 })).toBeCloseTo(0.4);
-    expect(combineResist([0.2, 0.2], { stacking: 'multiplicative', cap: 0.6 })).toBeCloseTo(0.36);
-    expect(combineResist([0.5, 0.5], { stacking: 'additive', cap: 0.6 })).toBe(0.6);
+  test('같은 상태 저항(확정): 곱연산 1 - Π(1 - r), 상한 70%(TEMP). 예 20% + 30% = 44%', () => {
+    expect(combineResist([0.2, 0.3])).toBeCloseTo(0.44);
+    expect(combineResist([0.2, 0.2])).toBeCloseTo(0.36);
+    expect(TUNING.resist.cap).toBe(0.7);
+    expect(combineResist([0.6, 0.6])).toBe(0.7); // 0.84 → 상한
+    expect(combineResist([])).toBe(0);
+    // 다른 상태 저항은 각각 계산
+    expect(resistedDuration('burn', 'enemySkill', 10, { ...zero, burn: 0.44, bleed: 0.7 })).toBeCloseTo(5.6);
     // 실제 장비 조합: 조끼 +5 밀쳐내기 + 부츠 +5 밀쳐내기
     const s = forgeSave();
     own(s, 'quiltVest', 5);
@@ -362,31 +384,32 @@ describe('저항(지속시간 감소, 면역 아님)', () => {
   });
 });
 
-describe('[미정 옵션] 적 치명타·밀쳐내기와 캠프 동기 이동', () => {
-  test('적 치명타는 기본 꺼짐: 피해 그대로, 난수도 쓰지 않음', () => {
+describe('적 치명타(보류)·호냥이 밀쳐내기(확정)', () => {
+  test('적 치명타는 보류·꺼짐: 피해 그대로, 난수도 쓰지 않음(조끼 전설 옵션은 미래 연결용)', () => {
     let calls = 0;
     expect(enemyCritDamage(10, () => { calls++; return 0; }, 0.2)).toEqual({ dmg: 10, crit: false });
     expect(calls).toBe(0);
-    expect(TUNING.undecided.enemyCrit.enabled).toBe(false);
+    expect(TUNING.enemyCrit.enabled).toBe(false);
   });
 
-  test('켜면 조끼 +10 받는 치명타 피해 감소: 추가분만 / 전체', () => {
+  test('미래 연결 확인용: 켜면 조끼 +10 받는 치명타 피해 감소가 붙는다(지금은 꺼짐)', () => {
     const on = { enabled: true, chance: 1, multiplier: 1.5 };
     expect(enemyCritDamage(10, () => 0, 0.2, { ...on, reduction: 'bonusOnly' }).dmg).toBeCloseTo(14);
     expect(enemyCritDamage(10, () => 0, 0.2, { ...on, reduction: 'wholeHit' }).dmg).toBeCloseTo(12);
     expect(enemyCritDamage(10, () => 0, 0, { ...on, reduction: 'bonusOnly' }).dmg).toBeCloseTo(15);
   });
 
-  test('밀쳐내기: 캠프 제자리(최소 간격에서 멈춤, 후방 통과 없음) / 캠프도 밀림(간격 유지), 거리 감소 적용', () => {
-    const a = heroKnockback(500, 300, 100, 0.2, { campSync: 'campStays', minGap: 60 });
+  test('밀쳐내기: 호냥이만 밀리고 캠프 제자리, 캠프와 겹치지 않는 데까지만, 저항은 밀리는 거리 감소', () => {
+    const gap = heroCampMinGap();
+    expect(gap).toBeGreaterThanOrEqual((TUNING.camp.width + TUNING.player.width) / 2);
+    const a = heroKnockback(500, 300, 100, 0.2);
     expect(a).toEqual({ heroX: 420, campX: 300, moved: 80 });
-    const b = heroKnockback(380, 300, 100, 0, { campSync: 'campStays', minGap: 60 });
-    expect(b.heroX).toBe(360);
-    const c = heroKnockback(500, 300, 100, 0.2, { campSync: 'campPushed', minGap: 60 });
-    expect(c).toEqual({ heroX: 420, campX: 220, moved: 80 });
+    const b = heroKnockback(380, 300, 100, 0);
+    expect(b.heroX).toBe(300 + gap);
+    expect(b.campX).toBe(300);
   });
 
-  test('전투 진입점: 지금 기본값(캠프 제자리)으로 호냥이만 밀리고 캠프 뒤로 넘어가지 않는다', () => {
+  test('전투 진입점: 호냥이만 밀리고 캠프 뒤로 넘어가거나 겹치지 않는다', () => {
     const s = forgeSave();
     own(s, 'explorerBoots', 5);
     equipArmor(s, 'explorerBoots');
@@ -394,7 +417,7 @@ describe('[미정 옵션] 적 치명타·밀쳐내기와 캠프 동기 이동', 
     const cx = b.camp.x;
     const moved = b.knockbackHero(1000);
     expect(b.camp.x).toBe(cx);
-    expect(b.player.x).toBeGreaterThanOrEqual(cx + TUNING.undecided.heroKnockback.minGap);
+    expect(b.player.x).toBeGreaterThanOrEqual(cx + heroCampMinGap());
     expect(moved).toBeGreaterThan(0);
   });
 });

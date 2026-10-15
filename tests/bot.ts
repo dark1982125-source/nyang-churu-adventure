@@ -13,7 +13,7 @@ export function botInput(b: Battle): InputState {
   // 캠프 조준 투사체가 머리 위로 오면 점프해서 요격, 공중 적이 바로 앞에 오면 점프 펀치
   const shot = b.hazards.some((h) => h.kind === 'campShot' && h.x > p.x - 10 && h.x - p.x < 90 && h.y > 60);
   const bat = b.enemies.some((e) => e.def.flying && e.x > p.x && e.x - p.x < 75);
-  return { forward: true, jump: wave || rock || roll || (BOT.intercept && (shot || bat)), ult: b.ultGauge >= 100 ? 0 : null };
+  return { jump: wave || rock || roll || (BOT.intercept && (shot || bat)), ult: b.ultGauge >= 100 ? 0 : null };
 }
 
 /** 봇 옵션: intercept=false면 캠프 조준 투사체·공중 적을 일부러 무시한다(위협 측정용) */

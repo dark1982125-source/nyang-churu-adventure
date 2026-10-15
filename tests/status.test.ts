@@ -121,17 +121,17 @@ describe('상태이상 중첩·해제', () => {
     const b = fresh();
     b.applyHeroStatus({ tag: 'freeze', source: '시험', intensity: 1, duration: 1 });
     const x0 = b.player.x;
-    step(b, 0.5, { forward: true, jump: true, ult: null });
+    step(b, 0.5, { jump: true, ult: null });
     expect(b.player.x).toBe(x0);
     expect(b.player.y).toBe(0);
-    step(b, 1, { forward: true, jump: false, ult: null }); // 풀린 뒤에는 다시 전진
+    step(b, 1, { jump: false, ult: null }); // 풀린 뒤에는 다시 전진
     expect(b.player.x).toBeGreaterThan(x0);
 
     const fast = fresh();
     const slow = fresh();
     slow.applyHeroStatus({ tag: 'slow', source: '시험', intensity: 0.5, duration: 5 });
-    step(fast, 1, { forward: true, jump: false, ult: null });
-    step(slow, 1, { forward: true, jump: false, ult: null });
+    step(fast, 1, { jump: false, ult: null });
+    step(slow, 1, { jump: false, ult: null });
     expect(slow.player.x - 160).toBeCloseTo((fast.player.x - 160) * 0.5, 0);
   });
 
@@ -306,7 +306,8 @@ describe('적 등급별 제어 저항', () => {
 
   test('DOT는 보스에게도 들어가고, 같은 종류는 강한 쪽 유지', () => {
     const b = fresh();
-    const boss = spawn(b, 'stompSole');
+    // 자동 전진·레이저가 닿지 않는 먼 곳(지속 피해만 재기 위해)
+    const boss = (b as any).spawnEnemy('stompSole', 0, true, b.player.x + 1200) as Enemy;
     b.applyEnemyDot(boss, 'bleed', 3, 4, 'a');
     b.applyEnemyDot(boss, 'bleed', 1, 6, 'b');
     expect(boss.dots).toEqual([{ tag: 'bleed', dps: 3, remaining: 6, source: 'a' }]);
@@ -376,7 +377,7 @@ describe('캠프 위협 시험 적 A/B (TEMP)', () => {
     let jumped = false;
     for (let t = 0; t < 3; t += 1 / 60) {
       const near = b.hazards.some((h) => h.kind === 'campShot' && h.x - b.player.x < 90 && h.x > b.player.x - 10 && h.y > 60);
-      b.update(1 / 60, { forward: false, jump: near && !jumped, ult: null });
+      b.update(1 / 60, { jump: near && !jumped, ult: null });
       if (near) jumped = true;
     }
     expect(b.log.some((l) => l.type === 'shotBroken')).toBe(true);

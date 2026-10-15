@@ -211,7 +211,7 @@ export function unequipArmor(save: SaveData, slot: ArmorSlot): void {
 /**
  * 장착 보호구 합산 능력치. 저장 값을 읽기만 하며 몇 번 불러도 같다(장착·해제·로드 반복으로 누적되지 않음).
  * 같은 부위 중복 장착은 구조상 불가(부위당 1칸), 보유하지 않은 장비 id는 무시한다.
- * 저항 합산 방식·상한은 미정이라 여기서는 종류별 원값 목록만 모으고 combineResist()로 합친다.
+ * 종류별 원값 목록을 모아 combineResist()(곱연산·상한)로 합친다.
  */
 export function equippedArmorStats(save: SaveData): { total: ArmorStats; resistParts: Record<string, number[]> } {
   const total = emptyArmorStats();
@@ -233,11 +233,11 @@ export function equippedArmorStats(save: SaveData): { total: ArmorStats; resistP
   return { total, resistParts };
 }
 
-/** 미정 옵션: 같은 종류 저항 합산(TUNING.undecided.resist). 결과는 0~상한. */
-export function combineResist(parts: number[], opts: { stacking: 'additive' | 'multiplicative'; cap: number } = TUNING.undecided.resist): number {
+/** 확정: 같은 상태 저항은 남은 비율 곱연산 R = 1 - Π(1 - rᵢ). 최종 상한 TUNING.resist.cap(70%, TEMP). */
+export function combineResist(parts: number[], cap: number = TUNING.resist.cap): number {
   if (!parts.length) return 0;
-  const raw = opts.stacking === 'additive' ? parts.reduce((a, b) => a + b, 0) : 1 - parts.reduce((a, b) => a * (1 - b), 1);
-  return Math.max(0, Math.min(opts.cap, raw));
+  const raw = 1 - parts.reduce((a, b) => a * (1 - b), 1);
+  return Math.max(0, Math.min(cap, raw));
 }
 
 // ───────────────────────── 액세서리(나비 공방)

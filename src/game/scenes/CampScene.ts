@@ -91,12 +91,11 @@ export class CampScene extends Phaser.Scene {
     const cleared = s.clearedChapters.includes(1);
     text(this, 504, y0 + 44, cleared ? '구출 완료: 닥터 코숏 · 고난도 Ch 1 해금됨(고난도 미구현)' : '저 멀리 정체를 알 수 없는 감옥이 보입니다.', 14, COLORS.dim);
     text(this, 504, y0 + 76, '규칙: 오른쪽 전진만 · 대시 없음 · 3웨이브마다 목표 처치 후\n엘리트/보스와 부하 전부 처치 · 보스 열쇠로 감옥을 열어야 클리어', 14);
-    const mode = s.settings.advanceMode === 'hold' ? '누르는 동안 전진' : '자동 전진(비교 도구)';
     const pass = s.settings.passPolicy === 'frontBlock' ? '전방 전투' : '점프 통과+후방 레이저(비교 도구)';
-    text(this, 504, y0 + 122, `전진: ${mode} · 적 통과: ${pass}`, 14, COLORS.warn);
+    text(this, 504, y0 + 122, `전진: 자동(사거리 안 적과 함께 정차) · 적 통과: ${pass}`, 14, COLORS.warn);
     const w = WEAPON_DEFS[s.equipment.weapon];
     text(this, 504, y0 + 142, `무기: ${w.name} +${s.weapons[w.id]?.level ?? 0}`, 13, COLORS.dim);
-    text(this, 504, y0 + 166, 'PC: → / D 전진 · Space / ↑ 점프 · 1~3 궁극기\n모바일: 화면 아래 버튼', 13, COLORS.dim);
+    text(this, 504, y0 + 166, '전진은 자동이라 키가 필요 없어요. Space / ↑ 점프 · 1~3 궁극기 · Esc 나가기\n모바일: 화면 아래 점프·궁극기 버튼', 13, COLORS.dim);
     button(this, 504, y0 + 250, 416, 64, 'Ch 1 출격!', () => {
       sound.unlock();
       this.scene.start('battle');
@@ -145,13 +144,8 @@ export class CampScene extends Phaser.Scene {
 
   private drawSettings(): void {
     const s = store.save;
-    text(this, 24, 172, '전진 방식 — 확정: 누르는 동안 전진. 자동 전진은 비교용 개발 도구', 18, '#ffd9a0');
-    button(this, 24, 204, 300, 44, `누르는 동안 전진, 놓으면 정지${s.settings.advanceMode === 'hold' ? ' ✔' : ''}`, () => {
-      s.settings.advanceMode = 'hold'; store.persist(); this.scene.restart({ tab: 'settings' });
-    }, { size: 14 });
-    button(this, 340, 204, 300, 44, `[비교] 자동 전진, 적 앞에서 정지${s.settings.advanceMode === 'auto' ? ' ✔' : ''}`, () => {
-      s.settings.advanceMode = 'auto'; store.persist(); this.scene.restart({ tab: 'settings' });
-    }, { size: 14 });
+    text(this, 24, 172, '전진 방식 — 확정: 자동 전진', 18, '#ffd9a0');
+    text(this, 24, 204, '호냥이와 캠프가 함께 자동으로 전진하고, 기본 공격이 닿는 거리에 적이 오면\n함께 멈춰 싸웁니다. 가까운 적을 정리하면 다시 전진. 엘리트/보스전은 정차.', 14, COLORS.dim);
 
     text(this, 24, 262, '적 통과 — 확정: 전방 전투. 점프 통과는 비교용 개발 도구', 18, '#ffd9a0');
     button(this, 24, 294, 300, 44, `전방 전투: 서로 넘어가지 않음${s.settings.passPolicy === 'frontBlock' ? ' ✔' : ''}`, () => {

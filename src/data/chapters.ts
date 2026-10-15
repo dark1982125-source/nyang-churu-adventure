@@ -17,7 +17,10 @@ export interface NormalPhaseDef {
 }
 
 export interface WaveDef {
-  /** 이 x 지점에 도착하면 호냥이와 캠프가 함께 정차하고 웨이브가 시작된다 */
+  /**
+   * 첫 웨이브 시작 지점. 2·3웨이브와 감옥은 실행 중 앞 구간을 정리한 지점 + 이동 거리(TUNING.advance)로 다시 정해지고,
+   * 여기 값은 초기값으로만 쓴다(자동 전진으로 일반 구간에서 전진하는 거리가 판마다 달라서).
+   */
   triggerX: number;
   normal: NormalPhaseDef;
   /** 웨이브 끝 엘리트/보스. 본체와 분열·소환체를 전부 처치해야 다음 웨이브 */

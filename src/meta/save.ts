@@ -2,7 +2,7 @@ import type { CompanionId } from '../data/companions';
 import { LEGACY_MATERIAL_IDS, type CurrencyId, type LootId, type MaterialId } from '../data/items';
 import type { UltimateId } from '../data/skills';
 import { NODE_BY_ID } from '../data/progression';
-import { TUNING, type AdvanceMode, type PassPolicy } from '../config/tuning';
+import { TUNING, type PassPolicy } from '../config/tuning';
 import type { WeaponId } from '../data/weapons';
 import { ARMOR_DEFS, type ArmorId } from '../data/armor';
 import { ACCESSORY_DEFS, ACCESSORY_SLOTS, type AccessoryId } from '../data/accessories';
@@ -50,7 +50,7 @@ export interface SaveData {
    */
   activeRun: ActiveRun | null;
   settings: {
-    advanceMode: AdvanceMode; passPolicy: PassPolicy; bgmVolume: number; sfxVolume: number;
+    passPolicy: PassPolicy; bgmVolume: number; sfxVolume: number;
     /** [시험] 캠프 위협 A/B 임시 적 등장 */
     campThreatTest: boolean;
     /** [시험] 적 공격의 상태이상(치료·처방 확인용). Ch 1 적 상태이상은 기획 미정 */
@@ -93,7 +93,7 @@ export function newSave(): SaveData {
     stats: { runs: 0, clears: 0, defeats: 0, quits: 0 },
     activeRun: null,
     settings: {
-      advanceMode: TUNING.defaultAdvanceMode, passPolicy: TUNING.defaultPassPolicy, bgmVolume: 0.6, sfxVolume: 0.8,
+      passPolicy: TUNING.defaultPassPolicy, bgmVolume: 0.6, sfxVolume: 0.8,
       campThreatTest: true, statusTest: false,
     },
   };
@@ -173,12 +173,18 @@ export function loadSave(storage: SaveStorage): SaveData {
       equipment,
       flags: { ...base.flags, ...parsed.flags },
       stats: { ...base.stats, ...parsed.stats },
-      settings: { ...base.settings, ...parsed.settings },
+      settings: legacySettings({ ...base.settings, ...parsed.settings }),
       version: 1,
     };
   } catch {
     return base;
   }
+}
+
+/** 설정 정리: 폐기된 입력 유지 전진 설정(advanceMode)을 지운다. 진행 저장은 건드리지 않는다. */
+function legacySettings(st: SaveData['settings'] & { advanceMode?: unknown }): SaveData['settings'] {
+  const { advanceMode: _dropped, ...rest } = st;
+  return rest;
 }
 
 export function writeSave(storage: SaveStorage, save: SaveData): void {
@@ -233,7 +239,6 @@ export interface Loadout {
   ultimateEnabled: boolean;
   ultimates: UltimateId[];
   rescued: CompanionId[];
-  advanceMode: AdvanceMode;
   passPolicy: PassPolicy;
   weapon: WeaponId;
   /** 장착 무기 기본 공격력·강화 보너스 배율 */
@@ -276,7 +281,6 @@ export function buildLoadout(save: SaveData): Loadout {
     ultimateEnabled: nodeLevel(save, 'ultSlot') > 0,
     ultimates: [...save.equippedUltimates].slice(0, TUNING.ultimate.maxEquipped),
     rescued: [...save.rescued],
-    advanceMode: save.settings.advanceMode,
     passPolicy: save.settings.passPolicy,
     weapon: save.equipment.weapon,
     weaponAttackMul: equippedWeaponAttackMul(save),

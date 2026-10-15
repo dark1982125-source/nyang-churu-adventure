@@ -1,4 +1,4 @@
-import { TUNING, type AdvanceMode, type PassPolicy } from '../config/tuning';
+import { TUNING, type PassPolicy } from '../config/tuning';
 import { CHAPTER_1, requiredKillCount, type ChapterDef } from '../data/chapters';
 import { BOSS_PATTERNS, ENEMIES, ROLL_PATTERN, type EnemyCcKind, type EnemyDef, type EnemyKind } from '../data/enemies';
 import { MEDICINES, MEDICINE_FOR, STATUS_NAMES, type DotTag, type MedicineId } from '../data/medicines';
@@ -10,7 +10,7 @@ import {
   campOffers, heroOffers, isAutoGrant, type FillerOffer, type Offer, type PendingChoice, type RunSkills,
 } from './choices';
 import { Rng } from './rng';
-import { enemyCritDamage, heroKnockback, resistedDuration } from './armorRules';
+import { enemyCritDamage, heroCampMinGap, heroKnockback, resistedDuration } from './armorRules';
 import { prescriptionOrder, StatusSet, type StatusApply } from './status';
 
 /**
@@ -18,16 +18,15 @@ import { prescriptionOrder, StatusSet, type StatusApply } from './status';
  * 테스트에서 화면 없이 끝까지 돌릴 수 있다. 좌표: x는 오른쪽이 +, y는 지면(0)에서 위로 +.
  */
 
+/** 플레이어 입력. 전진은 자동(확정)이라 전진 입력이 없다. */
 export interface InputState {
-  /** 전진 입력(누르고 있는 동안). auto 모드에서는 무시된다. */
-  forward: boolean;
   /** 점프(이번 틱에 눌렸으면 true) */
   jump: boolean;
   /** 궁극기 슬롯 번호(0~2), 없으면 null */
   ult: number | null;
 }
 
-export const NO_INPUT: InputState = { forward: false, jump: false, ult: null };
+export const NO_INPUT: InputState = { jump: false, ult: null };
 
 export type Mode = 'travel' | 'wave' | 'toJail' | 'opening' | 'revealed' | 'victory' | 'defeat';
 export type DefeatCause = 'hero' | 'camp' | 'quit';
@@ -195,7 +194,10 @@ export interface HeroStats {
   basicInterval: number;
   critChance: number;
   critMultiplier: number;
+  /** 표시용 초당 환산 회복량(= 틱당 회복량 / 틱 간격). 실제 회복은 틱 단위 */
   hpRegen: number;
+  /** 자연 회복 틱 간격(초). 회복 수단이 없으면 Infinity */
+  regenInterval: number;
   /** 합산 방어력(영구 + 장비 + 판 임시) */
   defense: number;
   /** 직접 피해 배율 = 100/(100+방어력) */
@@ -213,8 +215,13 @@ export class Battle {
   readonly loadout: Loadout;
   readonly runId: number;
   readonly rng: Rng;
-  advanceMode: AdvanceMode;
   passPolicy: PassPolicy;
+  /** 교전 정차 중(전방 적이 기본 공격 유효 사거리 안). 일반 구간 자동 전진을 멈춘다 */
+  engaged = false;
+  /** 웨이브 시작 지점(실행 중 갱신: 다음 웨이브는 앞 웨이브를 정리한 지점 + 이동 거리) */
+  waveX: number[];
+  /** 감옥 위치(실행 중 갱신: 마지막 보스 처치 지점 + 거리) */
+  jailX: number;
 
   t = 0;
   mode: Mode = 'travel';
@@ -225,6 +232,10 @@ export class Battle {
     x: 160, y: 0, vy: 0, hp: 0, maxHp: 0, invuln: 0,
     energy: TUNING.player.maxEnergy as number, maxEnergy: TUNING.player.maxEnergy as number,
     basicTimer: 0, attackAnim: 0, maxXReached: 160, hurt: 0,
+    /** 밀쳐내기 경직 남은 시간 */
+    stagger: 0,
+    /** 자연 회복 틱 누적 시간(최대 HP면 0으로, 저축 없음) */
+    regenTimer: 0,
   };
   camp = { x: 0, mental: 0, maxMental: 0, shield: 0, moving: false };
 
@@ -285,7 +296,6 @@ export class Battle {
     this.loadout = opts.loadout;
     this.runId = opts.runId;
     this.rng = new Rng(opts.seed);
-    this.advanceMode = opts.loadout.advanceMode;
     this.passPolicy = opts.loadout.passPolicy;
     this.forceBellDrop = opts.forceBellDrop ?? false;
 
@@ -297,7 +307,9 @@ export class Battle {
     this.waves = this.chapter.waves.map(() => ({
       started: false, cleared: false, phase: 'normal' as const, normalKills: 0, spawnTimer: 0.6, finaleSpawned: false, finaleId: null, cleanedUp: 0,
     }));
-    this.rightLimit = this.chapter.waves[0].triggerX;
+    this.waveX = this.chapter.waves.map((w) => w.triggerX);
+    this.jailX = this.chapter.rescue?.jailX ?? 0;
+    this.rightLimit = this.waveX[0];
 
     if (this.chapter.rescue) {
       this.banner('저 멀리 무언가 갇혀 있다… 동료 발견! 보스를 물리치고 감옥 열쇠를 획득하세요.', 4);
@@ -324,17 +336,21 @@ export class Battle {
     // 액세서리(출격 시 계산)는 판 안 패시브와 합친 뒤 상한(TEMP) 적용. 세트 보너스 없음.
     const A = this.loadout.accessory;
     const AC = TUNING.accessory.caps;
-    const regenInterval = Math.min(AC.regenInterval, A.regenInterval);
-    const passiveRegen = P.hpRegen * lv('hpRegen');
-    // 회복 개시 조건 미정: 기본은 회복 패시브가 있어야 회복, 브로치는 회복 간격만 단축(같은 양을 더 짧은 간격으로)
-    const baseRegen = passiveRegen > 0 ? passiveRegen : (TUNING.undecided.broochSoloRegen && A.regenInterval > 0 ? TUNING.undecided.soloRegen : 0);
+    // 자연 회복(확정 8차): 틱당 회복량은 고정, 회복 속도는 틱 간격으로만 바뀐다.
+    // 회복 패시브: 레벨별 초당 회복량을 간격으로 환산. 햇살 방울 브로치: 단독으로 느린 회복, 패시브가 있으면 간격 추가 단축.
+    const R = TUNING.regen;
+    const passiveRate = P.hpRegen * lv('hpRegen');
+    let regenBase = passiveRate > 0 ? R.tickHeal / passiveRate : Infinity;
+    if (A.regenInterval > 0) regenBase = Math.min(regenBase, R.broochSoloInterval);
+    const regenInterval = regenBase * (1 - Math.min(AC.regenInterval, A.regenInterval));
     return {
       attackMul: this.loadout.damageMul * this.loadout.weaponAttackMul * (1 + P.attack * lv('attack') + A.attack),
       skillDamageMul: 1 + P.skillDamage * lv('skillDamage'),
       basicInterval: basicBase * (1 - Math.min(AC.attackSpeed, P.attackSpeed * lv('attackSpeed') + A.attackSpeed)),
       critChance: Math.min(P.caps.critChance, TUNING.player.baseCritChance + P.critChance * lv('critChance') + A.critChance),
       critMultiplier: TUNING.player.baseCritMultiplier + P.critDamage * lv('critDamage') + A.critDamage,
-      hpRegen: baseRegen / (1 - regenInterval),
+      hpRegen: Number.isFinite(regenInterval) ? R.tickHeal / regenInterval : 0,
+      regenInterval,
       defense: this.totalDefense(),
       damageTaken: 100 / (100 + this.totalDefense()),
       // 보호구 회피(스니커)와 판 안 회피 패시브를 합쳐 상한(미정, TEMP) 적용
@@ -530,18 +546,30 @@ export class Battle {
     const frozen = this.heroStatus.frozen;
     // 기력: 기본 자연 회복 + 패시브 가속
     p.energy = Math.min(p.maxEnergy, p.energy + st.energyRegen * dt);
-    // HP: '체력 회복력 증가' 습득 후에만 자연 회복, 피격 대기시간 없음
-    if (st.hpRegen > 0 && p.hp > 0) p.hp = Math.min(p.maxHp, p.hp + st.hpRegen * dt);
+    // HP 자연 회복: 틱 방식. 최대 HP일 때는 시간을 쌓지 않아 피격 직후 몰아서 회복하지 않는다.
+    if (Number.isFinite(st.regenInterval) && p.hp > 0 && p.hp < p.maxHp) {
+      p.regenTimer += dt;
+      if (p.regenTimer >= st.regenInterval) {
+        p.regenTimer -= st.regenInterval;
+        p.hp = Math.min(p.maxHp, p.hp + TUNING.regen.tickHeal);
+      }
+    } else p.regenTimer = 0;
 
-    let wantMove: boolean;
-    if (this.advanceMode === 'hold') wantMove = input.forward;
-    else wantMove = !this.enemyAhead(150);
-    // 빙결: 이동·점프·공격 정지(빙결 자체 시간 제한 있음). 감속: 이동 속도만 감소(TEMP 범위)
-    if (frozen) wantMove = false;
+    // 자동 전진(확정): 일반 구간·이동 구간에서 캠프와 함께 오른쪽으로 전진. 기본 공격이 닿는 전방 적이 있으면
+    // 함께 정차해 싸우고, 가까운 적을 정리하면 재개(재개 판정 여유 TEMP). 엘리트/보스 구간은 정차 유지(rightLimit).
+    p.stagger = Math.max(0, p.stagger - dt);
+    this.updateEngage();
+    // 밀쳐내기 뒤에는 경직이 끝나면 원래 호위 위치까지 먼저 복귀(그동안 캠프는 제자리)
+    const escortX = this.camp.x + TUNING.camp.followGap;
+    const returning = p.x < escortX - 0.5;
+    let wantMove = returning || !this.engaged;
+    if (frozen || p.stagger > 0) wantMove = false;
 
     if (wantMove) {
-      let nx = p.x + TUNING.player.moveSpeed * this.heroStatus.moveMul * dt;
-      nx = Math.min(nx, this.rightLimit);
+      const speed = (returning ? Math.max(TUNING.heroKnockback.returnSpeed, TUNING.player.moveSpeed) : TUNING.player.moveSpeed) * this.heroStatus.moveMul;
+      let nx = p.x + speed * dt;
+      // 복귀 중에는 호위 위치까지만, 그 뒤에는 구간 한계(엘리트/보스 정차 지점·다음 웨이브 지점·감옥 앞)까지
+      nx = Math.min(nx, returning ? escortX : this.rightLimit);
       // 적에게 막힌다. 확정 규칙(frontBlock)에서는 점프 중에도 적을 뛰어넘어 뒤에 남기지 않는다.
       // 비교 도구(jumpPass)에서만 공중에서 넘어갈 수 있다.
       for (const e of this.enemies) {
@@ -550,7 +578,6 @@ export class Battle {
         if (e.def.flying) continue; // 공중 적은 지면 전진을 막지 않는다
         nx = Math.min(nx, e.x - (TUNING.player.width + e.def.width) / 2);
       }
-      // 오른쪽 전진만 허용: 어떤 경우에도 x는 줄어들지 않는다.
       p.x = Math.max(p.x, nx);
     }
     p.maxXReached = Math.max(p.maxXReached, p.x);
@@ -565,8 +592,19 @@ export class Battle {
     return this.player.y < e.y + e.def.height && e.y < this.player.y + TUNING.player.height;
   }
 
-  private enemyAhead(dist: number): boolean {
-    return this.enemies.some((e) => !e.passed && !e.def.flying && e.x > this.player.x && e.x - e.def.width / 2 - this.player.x < dist);
+  /**
+   * 교전 정차 판정. 정차 거리 = 기본 공격 사거리(실제로 닿는 거리)와 같다. 공중 적은 지상 펀치 높이에 있을 때만 센다
+   * (높이 떠 있는 적·사거리 밖 원거리 적 때문에 멈춰 서지 않는다). 재개는 사거리 + 여유(TEMP) 밖으로 비었을 때.
+   */
+  private updateEngage(): void {
+    const extra = this.engaged ? TUNING.advance.resumeMargin : 0;
+    this.engaged = this.reachableEnemies(TUNING.basicAttack.range + extra, true).length > 0;
+  }
+
+  /** 기본 공격이 닿는 전방 적. groundTop이면 착지 상태 기준 높이(점프로 판정이 바뀌지 않게) */
+  private reachableEnemies(range: number, groundTop = false): Enemy[] {
+    const top = groundTop ? TUNING.player.height + TUNING.player.punchReachUp : this.punchTop();
+    return this.frontEnemies(range).filter((e) => !e.def.flying || e.y <= top);
   }
 
   /** 확정: 호냥이와 캠프는 함께 움직이고 함께 멈추며 일정 간격을 유지한다(간격 수치 TEMP). 캠프는 지상. */
@@ -581,8 +619,7 @@ export class Battle {
 
   private updateWaves(dt: number): void {
     if (this.mode === 'travel' && this.waveIndex < 3) {
-      const def = this.chapter.waves[this.waveIndex];
-      if (this.player.x >= def.triggerX - 1) this.startWave();
+      if (this.player.x >= this.waveX[this.waveIndex] - 1) this.startWave();
     }
     if (this.mode !== 'wave') return;
 
@@ -621,7 +658,8 @@ export class Battle {
   private spawnFinale(i: number): void {
     const w = this.waves[i];
     if (w.finaleSpawned) return;
-    const e = this.spawnEnemy(this.chapter.waves[i].finale, i, true);
+    // 엘리트/보스는 화면 안쪽에서 등장해 정차 상태에서 오래 기다리지 않게 한다(거리 TEMP)
+    const e = this.spawnEnemy(this.chapter.waves[i].finale, i, true, this.player.x + TUNING.waves.finaleSpawnAhead);
     e.role = 'finale';
     w.finaleSpawned = true;
     w.finaleId = e.id;
@@ -653,6 +691,8 @@ export class Battle {
     this.enemies = this.enemies.filter((e) => !leftovers.includes(e));
     w.cleanedUp = leftovers.length;
     w.phase = 'finale';
+    // 엘리트/보스 구간은 정차 유지: 지금 호위 위치에서 멈춘다(밀려 있었다면 복귀 지점까지만)
+    this.rightLimit = Math.max(this.player.x, this.camp.x + TUNING.camp.followGap);
     this.logEvent('cleanup', `${i + 1}`, leftovers.length);
     const removedAttacks = this.hazards.length + this.scheduled.length;
     this.hazards = [];
@@ -673,11 +713,10 @@ export class Battle {
 
   private startWave(): void {
     const i = this.waveIndex;
-    const def = this.chapter.waves[i];
     this.waves[i].started = true;
     this.mode = 'wave';
-    // 전방 전투 구역: 이 너머로는 전진할 수 없다
-    this.rightLimit = def.triggerX + TUNING.waves.arenaLength;
+    // 일반 구간: 자동 전진하며 교전(구간 끝 없음). 엘리트/보스 구간에 들어서면 그 자리에 정차한다.
+    this.rightLimit = Infinity;
     this.logEvent('waveStart', `${i + 1}`);
     this.banner(`웨이브 ${i + 1} / 3`, 1.8);
   }
@@ -710,13 +749,17 @@ export class Battle {
     this.waves[i].cleared = true;
     this.logEvent('waveClear', `${i + 1}`);
     this.waveIndex++;
+    const here = Math.max(this.player.x, this.camp.x + TUNING.camp.followGap);
     if (this.waveIndex < 3) {
       this.mode = 'travel';
-      this.rightLimit = this.chapter.waves[this.waveIndex].triggerX;
+      // 다음 웨이브는 앞 웨이브를 정리한 지점에서 이동 거리(TEMP)만큼 앞(일반 구간 전진 거리와 무관하게 일정)
+      this.waveX[this.waveIndex] = here + TUNING.advance.travelGap;
+      this.rightLimit = this.waveX[this.waveIndex];
       this.banner(`웨이브 ${i + 1} 돌파! 캠프 전진`, 1.8);
     } else if (this.chapter.rescue) {
       this.mode = 'toJail';
-      this.rightLimit = this.chapter.rescue.jailX - 50;
+      this.jailX = here + TUNING.advance.jailGap;
+      this.rightLimit = this.jailX - 50;
       this.banner('감옥 열쇠를 챙겨 감옥으로!', 2.5);
     } else {
       this.finish('victory');
@@ -725,7 +768,8 @@ export class Battle {
 
   private spawnEnemy(kind: EnemyKind, wave: number, required: boolean, x?: number, parent?: Enemy): Enemy {
     const def = ENEMIES[kind];
-    const spawnX = x ?? this.chapter.waves[wave].triggerX + TUNING.waves.arenaLength + TUNING.waves.spawnAhead;
+    // 호냥이 전방 화면 끝 근처에서 등장(자동 전진 중이면 그 지점 기준)
+    const spawnX = x ?? this.player.x + TUNING.waves.spawnAhead;
     const e: Enemy = {
       id: this.nextId++, def, x: spawnX, y: def.flying?.altitude ?? 0, vy: 0, hp: def.hp, wave, required,
       parentId: parent?.id ?? null, generation: parent ? parent.generation + 1 : 0,
@@ -904,17 +948,21 @@ export class Battle {
         e.state = 'throw';
         e.stateTimer = BOSS_PATTERNS.rockThrow.telegraph;
         this.addEffect({ kind: 'telegraph', x1: e.x - 50, x2: e.x + 50, y1: 0, y2: 10, ttl: e.stateTimer, text: '돌 투척! 점프해서 부숴요' });
+        // 캠프 대상 공격(확정): 대상을 명확히 예고
+        this.addEffect({ kind: 'aim', x1: this.camp.x, x2: e.x, y1: 60, y2: e.def.height, ttl: e.stateTimer, text: '캠프 조준!' });
         e.cdB = BOSS_PATTERNS.rockThrow.cooldown;
       } else if (e.cdA <= 0) {
         e.state = 'stomp';
         e.stateTimer = BOSS_PATTERNS.shockwave.telegraph;
-        this.addEffect({ kind: 'telegraph', x1: e.x - 60, x2: e.x + 60, y1: 0, y2: 10, ttl: e.stateTimer, text: '쿵!' });
+        // 호냥이 대상 공격(확정): 예고한 위치(호냥이 등 뒤 끝)까지 가서 끝난다. 피해도 캠프로 넘어가지 않는다.
+        e.rollTarget = p.x - TUNING.player.width / 2;
+        this.addEffect({ kind: 'telegraph', x1: e.rollTarget, x2: e.x, y1: 0, y2: 10, ttl: e.stateTimer, text: '쿵! 충격파(점프)' });
       }
     } else if (e.state === 'stomp') {
       e.stateTimer -= dt;
       if (e.stateTimer <= 0) {
         const S = BOSS_PATTERNS.shockwave;
-        this.hazards.push({ kind: 'shockwave', x: e.x - e.def.width / 2, y: 0, vx: -S.speed, progress: 0, startX: 0, targetX: 0, radius: S.width / 2, damage: S.damage, hp: 0, maxHp: 0, duration: 0, startY: 0, endY: 0, arc: 0, hitPlayer: false, done: false });
+        this.hazards.push({ kind: 'shockwave', x: e.x - e.def.width / 2, y: 0, vx: -S.speed, progress: 0, startX: 0, targetX: e.rollTarget, radius: S.width / 2, damage: S.damage, hp: 0, maxHp: 0, duration: 0, startY: 0, endY: 0, arc: 0, hitPlayer: false, done: false });
         e.state = 'walk';
         e.cdA = S.cooldown;
       }
@@ -938,10 +986,8 @@ export class Battle {
         h.x += h.vx * dt * slow;
         const hit = Math.abs(h.x - p.x) < h.radius + TUNING.player.width / 2 && p.y < S.height;
         if (hit && !h.hitPlayer) { this.damagePlayer(h.damage, 'direct', this.testStatus(S.testStatus, '충격파')); h.hitPlayer = true; }
-        if (h.x <= this.camp.x + TUNING.camp.width / 2) {
-          this.damageCamp(S.campDamage);
-          h.done = true;
-        }
+        // 예고 위치에서 종료. 점프로 피해도 뒤 캠프에 전가·관통하지 않는다(양측 관통 공격은 초반 제외).
+        if (h.x <= h.targetX) h.done = true;
       } else {
         // 큰 돌·캠프 조준 투사체: 던진 곳에서 캠프까지 포물선. 캠프에 닿으면 멘탈 피해.
         h.progress = Math.min(1, h.progress + (dt * slow) / h.duration);
@@ -1026,9 +1072,8 @@ export class Battle {
     p.basicTimer -= dt;
     if (p.basicTimer <= 0 && !frozen) {
       const rock = this.rockInPunchReach(B.range);
-      const top = this.punchTop();
       // 공중 적은 펀치가 닿는 높이일 때만(점프해서 친다)
-      const target = rock ? null : this.frontEnemies(B.range).find((e) => !e.def.flying || e.y <= top);
+      const target = rock ? null : this.reachableEnemies(B.range)[0];
       if (rock || target) {
         const { dmg, crit } = this.rollDamage(B.damage * (1 + B.damagePerLevel * (lvl - 1)), 'basic', st);
         if (rock) this.hitRock(rock, dmg);
@@ -1491,16 +1536,20 @@ export class Battle {
   }
 
   /**
-   * [미정 옵션·시험 진입점] 호냥이 밀쳐내기. 지금 호냥이를 미는 적은 없다.
-   * 보호구 밀쳐내기 거리 감소 후 TUNING.undecided.heroKnockback.campSync로 캠프 동기 이동 관계를 비교한다.
+   * 호냥이 밀쳐내기(확정 8차). 호냥이만 뒤로 밀리고 캠프는 제자리, 캠프와 겹치지 않는 데까지만.
+   * 경직(TEMP)이 끝나면 원래 호위 위치로 복귀한 뒤 동기 전진을 재개하고, 엘리트/보스 구간이면 복귀 뒤에도 정차한다.
+   * 밀쳐내기 저항은 밀리는 거리를 줄인다. 지금 Ch 1에는 호냥이를 미는 적 공격이 없다(규칙·시험 진입점).
    */
   knockbackHero(dist: number): number {
     if (this.finished || this.clearConfirmed) return 0;
     const r = heroKnockback(this.player.x, this.camp.x, dist, this.loadout.armor.resist.knockback);
     this.player.x = r.heroX;
-    this.camp.x = r.campX;
+    if (r.moved > 0) this.player.stagger = TUNING.heroKnockback.stagger;
     return r.moved;
   }
+
+  /** 호냥이-캠프 최소 간격(겹침 금지) */
+  get heroCampMinGap(): number { return heroCampMinGap(); }
 
   damageCamp(n: number): void {
     if (this.clearConfirmed) return;

@@ -167,7 +167,7 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
 export const BOSS_PATTERNS = {
   /** 발 구르기 → 지면을 따라 왼쪽으로 이동하는 충격파. 점프로 피한다. */
   shockwave: {
-    cooldown: 3.6, telegraph: 0.8, speed: 260, width: 40, height: 30, damage: 14, campDamage: 4,
+    cooldown: 3.6, telegraph: 0.8, speed: 260, width: 40, height: 30, damage: 14,
     /** [시험] 상태이상 켰을 때만 */
     testStatus: { tag: 'freeze' as StatusTag, intensity: 1, duration: 1.2 },
   },

@@ -11,7 +11,7 @@ import { Rng } from '../src/sim/rng';
 import { botChoose } from './bot';
 
 const DT = 1 / 60;
-const GO = { forward: true, jump: false, ult: null };
+const GO = { jump: false, ult: null };
 const fresh = (seed = 3, mutate?: (s: ReturnType<typeof newSave>) => void) => {
   const save = newSave();
   mutate?.(save);
@@ -22,24 +22,19 @@ const step = (b: Battle, secs: number, input = NO_INPUT) => {
 };
 const empty = (): RunSkills => ({ basicLevel: 1, exclusives: [], passives: {}, camp: {} });
 
-describe('이동: 누르는 동안 전진, 캠프와 함께 이동·정지', () => {
-  test('호냥이와 캠프가 함께 움직이고 함께 멈추며 간격을 유지한다', () => {
+describe('이동: 자동 전진, 캠프와 함께 전진·정차', () => {
+  test('입력 없이 호냥이와 캠프가 함께 전진하며 간격을 유지한다', () => {
     const b = fresh();
     const gap0 = b.player.x - b.camp.x;
     step(b, 1, GO);
     expect(b.player.x - b.camp.x).toBeCloseTo(gap0);
     expect(b.camp.moving).toBe(true);
-    const x = b.player.x;
-    const cx = b.camp.x;
-    step(b, 1);
-    expect(b.player.x).toBe(x);
-    expect(b.camp.x).toBe(cx);
-    expect(b.camp.moving).toBe(false);
   });
 
-  test('웨이브 정차 중에는 전진 입력을 눌러도 함께 멈춰 있다', () => {
+  test('엘리트/보스 구간에서는 함께 정차해 있다', () => {
     const b = fresh();
-    while (b.mode !== 'wave') b.update(DT, GO);
+    while (!(b.mode === 'wave' && b.waves[0].phase === 'finale')) { if (b.paused) botChoose(b); b.update(DT, GO); }
+    while (b.paused || b.introTimer > 0) { if (b.paused) botChoose(b); else b.update(DT, GO); }
     const x = b.player.x;
     const cx = b.camp.x;
     for (let i = 0; i < 120; i++) { if (b.paused) botChoose(b); b.update(DT, GO); }

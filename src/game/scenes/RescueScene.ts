@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { store } from '../store';
-import { button, FONT, text } from '../ui';
+import { FONT, text } from '../ui';
 import { COMPANIONS } from '../../data/companions';
 import { completePendingClear, pendingClear } from '../../meta/settlement';
 import { sound } from '../sound';
@@ -22,8 +22,6 @@ export class RescueScene extends Phaser.Scene {
   private timer = 0;
   private g!: Phaser.GameObjects.Graphics;
   private label!: Phaser.GameObjects.Text;
-  private keys!: Record<string, Phaser.Input.Keyboard.Key>;
-  private touchForward = false;
 
   constructor() { super('rescue'); }
 
@@ -33,18 +31,12 @@ export class RescueScene extends Phaser.Scene {
     this.heroX = 160;
     this.phase = 'walk';
     this.timer = 0;
-    this.touchForward = false;
     this.cameras.main.setBackgroundColor(0xbfe3f2);
     this.input.once('pointerdown', () => sound.unlock());
     this.g = this.add.graphics();
     text(this, 24, 18, `Ch ${a.chapterId} 클리어 확정 · 구출 마무리`, 24, '#3a2a4a');
     text(this, 24, 54, '지난번에 보스를 처치한 뒤 구출을 끝내기 전에 게임이 종료되었습니다.\n전투는 다시 하지 않습니다. 열쇠를 들고 감옥으로 가서 구출을 마무리하세요.', 14, '#3d3852');
-    this.label = this.add.text(W / 2, 150, '열쇠 보유 · → 를 누르고 있으면 감옥으로 걸어갑니다', { fontFamily: FONT, fontSize: '20px', color: '#ffffff', stroke: '#3a2a4a', strokeThickness: 5, align: 'center' }).setOrigin(0.5);
-    this.keys = this.input.keyboard!.addKeys('RIGHT,D') as Record<string, Phaser.Input.Keyboard.Key>;
-    const fwd = button(this, 24, 470, 150, 56, '▶ 전진', () => { /* pointerup */ }, { size: 18, color: 0x5b4f86 });
-    fwd.on('pointerdown', () => { this.touchForward = true; });
-    fwd.on('pointerup', () => { this.touchForward = false; });
-    fwd.on('pointerout', () => { this.touchForward = false; });
+    this.label = this.add.text(W / 2, 150, '열쇠 보유 · 감옥으로 자동으로 걸어갑니다', { fontFamily: FONT, fontSize: '20px', color: '#ffffff', stroke: '#3a2a4a', strokeThickness: 5, align: 'center' }).setOrigin(0.5);
   }
 
   update(_t: number, deltaMs: number): void {
@@ -52,7 +44,8 @@ export class RescueScene extends Phaser.Scene {
     if (!a && this.phase !== 'done') return;
     const dt = Math.min(deltaMs / 1000, 0.05);
     if (this.phase === 'walk') {
-      if (this.keys.RIGHT.isDown || this.keys.D.isDown || this.touchForward) this.heroX = Math.min(JAIL_X - 60, this.heroX + 180 * dt);
+      // 자동 전진(확정): 입력 없이 감옥으로 걸어간다
+      this.heroX = Math.min(JAIL_X - 60, this.heroX + 180 * dt);
       if (this.heroX >= JAIL_X - 62) { this.phase = 'opening'; this.timer = OPEN_TIME; this.label.setText('열쇠로 감옥을 여는 중…'); sound.play('pickup'); }
     } else if (this.phase === 'opening') {
       this.timer -= dt;

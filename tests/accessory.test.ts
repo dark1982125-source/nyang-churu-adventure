@@ -298,19 +298,54 @@ describe('장착·해제·강화·불러오기 — 중복 스탯·회복 악용 
     expect(battle(s).stats().energyRegen / battle(newSave()).stats().energyRegen).toBeCloseTo(1 + accessoryValueAt('moonCharm', 10));
   });
 
-  test('햇살 브로치: 회복 패시브가 있으면 같은 양을 더 짧은 간격으로(회복 속도↑), 없으면 단독 회복 개시 안 함(미정 기본값)', () => {
+  test('햇살 브로치(확정 8차): 단독으로 느린 회복, 회복 패시브가 있으면 간격이 더 짧아진다. 틱당 회복량은 그대로', () => {
     const s = nabiSave();
     own(s, 'sunBrooch', 10);
     equipAccessory(s, 'sunBrooch', 0);
     const b = battle(s);
-    expect(b.stats().hpRegen).toBe(0);
+    const v = accessoryValueAt('sunBrooch', 10);
+    const solo = b.stats().regenInterval;
+    expect(solo).toBeCloseTo(TUNING.regen.broochSoloInterval * (1 - v));
     b.player.hp = 50;
-    for (let i = 0; i < 120; i++) b.update(1 / 60, NO_INPUT);
-    expect(b.player.hp).toBe(50); // 회복 개시 조건 미정 → 단독 회복 없음
+    b.update(1 / 60, NO_INPUT);
+    expect(b.player.hp).toBe(50); // 장착·출격 즉시 회복 없음
+    for (let t = 0; t < solo; t += 1 / 60) b.update(1 / 60, NO_INPUT);
+    expect(b.player.hp).toBe(50 + TUNING.regen.tickHeal); // 한 틱 = 고정 회복량
+    // 회복 패시브 추가: 간격 추가 단축(틱당 양은 그대로)
     b.skills.passives.hpRegen = 1;
+    const both = b.stats().regenInterval;
     const plain = battle(newSave());
     plain.skills.passives.hpRegen = 1;
-    expect(b.stats().hpRegen).toBeCloseTo(plain.stats().hpRegen / (1 - accessoryValueAt('sunBrooch', 10)));
+    expect(both).toBeLessThan(solo);
+    expect(both).toBeLessThan(plain.stats().regenInterval);
+    expect(both).toBeCloseTo(Math.min(plain.stats().regenInterval, TUNING.regen.broochSoloInterval) * (1 - v));
+    // 브로치·패시브 둘 다 없으면 회복 없음
+    expect(battle(newSave()).stats().regenInterval).toBe(Infinity);
+  });
+
+  test('회복 악용 방지: 최대 HP일 때 시간을 저축하지 않고, 회복 루프는 하나뿐(두 칸에 같은 브로치 불가)', () => {
+    const s = nabiSave();
+    own(s, 'sunBrooch', 10);
+    equipAccessory(s, 'sunBrooch', 0);
+    expect(equipAccessory(s, 'sunBrooch', 1)).toBe('duplicate');
+    const b = battle(s);
+    (b as any).updateWaves = () => undefined; // 적 없이 회복만 본다
+    (b as any).updateSupports = () => undefined;
+    const interval = b.stats().regenInterval;
+    // 가득 찬 상태로 오래 있다가 맞아도 몰아서 회복하지 않는다
+    for (let t = 0; t < 30; t += 1 / 60) b.update(1 / 60, NO_INPUT);
+    b.player.hp = b.player.maxHp - 20;
+    const hp = b.player.hp;
+    for (let t = 0; t < interval - 0.1; t += 1 / 60) b.update(1 / 60, NO_INPUT);
+    expect(b.player.hp).toBe(hp);
+    // 긴 시간 동안 회복량 = 틱 수 × 틱당 양(중복 루프 없음)
+    const c = battle(s);
+    (c as any).updateWaves = () => undefined;
+    (c as any).updateSupports = () => undefined; // 캡슐 회복 제외
+    c.player.hp = 10;
+    let healed = 0;
+    for (let t = 0; t < 20; t += 1 / 60) { const h = c.player.hp; c.update(1 / 60, NO_INPUT); if (c.player.hp > h) healed += c.player.hp - h; }
+    expect(healed).toBeLessThanOrEqual((Math.floor(20 / interval) + 1) * TUNING.regen.tickHeal);
   });
 
   test('판 안에서 최대 HP 이상 회복하지 않고, 최대 HP는 출격 때 한 번만 더해진다', () => {
