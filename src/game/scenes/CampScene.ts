@@ -96,18 +96,18 @@ export class CampScene extends Phaser.Scene {
     const s = store.save;
     text(this, 24, 168, '영구 성장 — 모두 [테스트] 노드입니다. 최종 트리·가격은 미정.', 14, COLORS.warn);
     UPGRADE_NODES.forEach((n, i) => {
-      const col = i < 6 ? 0 : 1;
-      const row = i < 6 ? i : i - 6;
+      const col = i < 7 ? 0 : 1;
+      const row = i < 7 ? i : i - 7;
       const x = 24 + col * 460;
-      const y = 196 + row * 54;
+      const y = 194 + row * 47;
       const lvl = nodeLevel(s, n.id);
       const st = canBuyNode(s, n.id);
       const price = lvl >= n.maxLevel ? '최대' : `${CURRENCY_NAMES[n.currency]} ${n.cost(lvl)}`;
-      const reason = st === 'locked' ? ' (선행 필요)' : '';
-      this.add.rectangle(x, y, 448, 48, COLORS.panel).setOrigin(0);
-      text(this, x + 10, y + 5, `${n.name}  Lv.${lvl}/${n.maxLevel}`, 14);
-      text(this, x + 10, y + 26, `${n.desc}${reason}`, 12, COLORS.dim);
-      button(this, x + 318, y + 7, 122, 34, price, () => {
+      const reason = st === 'locked' ? (n.requiresRescue && !s.rescued.includes(n.requiresRescue) ? ' (코숏 구출 필요)' : ' (선행 필요)') : '';
+      this.add.rectangle(x, y, 448, 43, COLORS.panel).setOrigin(0);
+      text(this, x + 10, y + 3, `${n.name}  Lv.${lvl}/${n.maxLevel}`, 14);
+      text(this, x + 10, y + 23, `${n.desc}${reason}`.slice(0, 44), 11, COLORS.dim);
+      button(this, x + 318, y + 5, 122, 33, price, () => {
         if (buyNode(s, n.id) === 'ok') { store.persist(); sound.play('levelUp'); }
         this.scene.restart({ tab: 'growth' });
       }, { size: 13, enabled: st === 'ok' });
@@ -148,6 +148,14 @@ export class CampScene extends Phaser.Scene {
     }, { size: 14 });
     button(this, 340, 294, 300, 44, `[비교] 점프 통과 + 후방 레이저${s.settings.passPolicy === 'jumpPass' ? ' ✔' : ''}`, () => {
       s.settings.passPolicy = 'jumpPass'; store.persist(); this.scene.restart({ tab: 'settings' });
+    }, { size: 14 });
+
+    text(this, 660, 172, '[시험] 확인용 (확정 아님)', 18, '#ffd9a0');
+    button(this, 660, 204, 276, 44, `캠프 위협 A/B 시험 적 ${s.settings.campThreatTest ? '켜짐 ✔' : '꺼짐'}`, () => {
+      s.settings.campThreatTest = !s.settings.campThreatTest; store.persist(); this.scene.restart({ tab: 'settings' });
+    }, { size: 14 });
+    button(this, 660, 294, 276, 44, `적 상태이상 공격 ${s.settings.statusTest ? '켜짐 ✔' : '꺼짐'}`, () => {
+      s.settings.statusTest = !s.settings.statusTest; store.persist(); this.scene.restart({ tab: 'settings' });
     }, { size: 14 });
 
     text(this, 24, 356, `효과음 볼륨 ${Math.round(s.settings.sfxVolume * 100)}%  (배경음악은 파일 미제공으로 없음)`, 16);

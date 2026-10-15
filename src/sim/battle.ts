@@ -1,6 +1,7 @@
 import { TUNING, type AdvanceMode, type PassPolicy } from '../config/tuning';
 import { CHAPTER_1, requiredKillCount, type ChapterDef } from '../data/chapters';
-import { BOSS_PATTERNS, ENEMIES, ROLL_PATTERN, type EnemyDef, type EnemyKind } from '../data/enemies';
+import { BOSS_PATTERNS, ENEMIES, ROLL_PATTERN, type EnemyCcKind, type EnemyDef, type EnemyKind } from '../data/enemies';
+import { MEDICINES, MEDICINE_FOR, STATUS_NAMES, type DotTag, type MedicineId } from '../data/medicines';
 import type { LootId } from '../data/items';
 import { COMPANIONS, type CompanionId } from '../data/companions';
 import { GLOVE, ULTIMATES, type CampSkillId, type ExclusiveSkillDef, type PassiveId, type UltimateId, type WeaponDef } from '../data/skills';
@@ -9,6 +10,7 @@ import {
   campOffers, heroOffers, type FillerOffer, type Offer, type PendingChoice, type RunSkills,
 } from './choices';
 import { Rng } from './rng';
+import { prescriptionOrder, StatusSet, type StatusApply } from './status';
 
 /**
  * 한 판(챕터 1개)의 전투 시뮬레이션. Phaser와 분리된 순수 로직이라
@@ -28,8 +30,11 @@ export const NO_INPUT: InputState = { forward: false, jump: false, ult: null };
 
 export type Mode = 'travel' | 'wave' | 'toJail' | 'opening' | 'revealed' | 'victory' | 'defeat';
 export type DefeatCause = 'hero' | 'camp' | 'quit';
-/** 피해 구분 태그. 회피·치명타는 direct에만 적용, 지속 피해(dot)는 제외 */
-export type DamageKind = 'direct' | 'dot';
+/**
+ * 피해 구분 태그. direct(접촉·근접·투사체·폭발)에만 회피·방어력이 적용된다.
+ * dot(독·화상·출혈)·terrain(용암·위험지형 지속 피해)은 회피·방어·치명타 제외.
+ */
+export type DamageKind = 'direct' | 'dot' | 'terrain';
 /** 호냥이 공격 출처. 공격력/스킬 피해 패시브 적용 범위가 다르다 */
 export type AttackSource = 'basic' | 'skill' | 'ult';
 
@@ -48,10 +53,19 @@ export interface Enemy {
   parentId: number | null;
   generation: number;
   contactCd: number;
-  stun: number;
+  /** 행동 정지(수면·기절·빙결) 남은 시간. 보스는 걸리지 않는다(짧은 감속으로 대체) */
+  cc: number;
+  ccKind: EnemyCcKind | null;
+  /** 감속 남은 시간과 속도 배율 */
+  slow: number;
+  slowMul: number;
+  /** 적 지속 피해(전 등급 적용). 같은 종류는 강한 쪽 유지·시간 갱신 */
+  dots: { tag: DotTag; dps: number; remaining: number; source: string }[];
+  /** 캠프 조준 적: 던진 횟수 */
+  shots: number;
   passed: boolean;
   /** 패턴 상태 */
-  state: 'walk' | 'telegraph' | 'roll' | 'stomp' | 'throw' | 'hop';
+  state: 'walk' | 'telegraph' | 'roll' | 'stomp' | 'throw' | 'hop' | 'aim';
   stateTimer: number;
   cdA: number;
   cdB: number;
@@ -61,8 +75,19 @@ export interface Enemy {
 }
 
 export interface Hazard {
-  /** shockwave: 지면 충격파(점프 회피). bigRock: 캠프를 향해 날아가는 큰 돌(공중 펀치로 파괴) */
-  kind: 'shockwave' | 'bigRock';
+  /**
+   * shockwave: 지면 충격파(점프 회피). bigRock: 보스가 캠프로 던지는 큰 돌(공중 펀치로 파괴).
+   * campShot: 캠프 위협 시험 적의 캠프 조준 투사체(펀치·기술·몸으로 요격).
+   */
+  kind: 'shockwave' | 'bigRock' | 'campShot';
+  /** campShot 궤적: lob(지상 투척) / drop(공중 투하) */
+  style?: 'lob' | 'drop';
+  maxHp: number;
+  /** 진행 시간(초) */
+  duration: number;
+  startY: number;
+  endY: number;
+  arc: number;
   x: number;
   y: number;
   vx: number;
@@ -77,11 +102,12 @@ export interface Hazard {
   done: boolean;
 }
 
-export type PickupKind = 'catnip' | 'gear' | 'loot' | 'bell' | 'key' | 'capsule';
+export type PickupKind = 'catnip' | 'gear' | 'loot' | 'bell' | 'key' | 'capsule' | 'medicine';
 export interface Pickup {
   id: number;
   kind: PickupKind;
   lootId?: LootId;
+  medId?: MedicineId;
   x: number;
   y: number;
   vy: number;
@@ -91,7 +117,7 @@ export interface Pickup {
 }
 
 export interface Effect {
-  kind: 'hit' | 'zone' | 'beam' | 'telegraph' | 'text' | 'laser' | 'banner' | 'shield' | 'ult';
+  kind: 'hit' | 'zone' | 'beam' | 'telegraph' | 'text' | 'laser' | 'banner' | 'shield' | 'ult' | 'aim' | 'dropMark';
   x1: number;
   x2: number;
   y1: number;
@@ -107,7 +133,8 @@ export interface LogEntry {
   type:
     | 'waveStart' | 'waveClear' | 'eliteSpawn' | 'kill' | 'split' | 'pass' | 'outOfBounds' | 'missedPickup'
     | 'levelUp' | 'campLevelUp' | 'skill' | 'ult' | 'revive' | 'bell' | 'key' | 'jailOpen' | 'victory' | 'defeat'
-    | 'evade' | 'crit' | 'rockBroken' | 'rockHitCamp' | 'loot' | 'cleanup' | 'quit' | 'filler';
+    | 'evade' | 'crit' | 'rockBroken' | 'rockHitCamp' | 'loot' | 'cleanup' | 'quit' | 'filler'
+    | 'status' | 'statusImmune' | 'cure' | 'prescribe' | 'enemyCc' | 'shotBroken' | 'shotHitCamp' | 'autoCollect';
   detail?: string;
   value?: number;
 }
@@ -167,6 +194,9 @@ export interface HeroStats {
   critChance: number;
   critMultiplier: number;
   hpRegen: number;
+  /** 합산 방어력(영구 + 장비 + 판 임시) */
+  defense: number;
+  /** 직접 피해 배율 = 100/(100+방어력) */
   damageTaken: number;
   evasion: number;
   energyRegen: number;
@@ -205,6 +235,14 @@ export class Battle {
   revivesUsed = 0;
   hasKey = false;
   slowAll = 0;
+  /** 호냥이 상태이상 */
+  heroStatus = new StatusSet();
+  /** 판 임시 방어 보너스(패시브 외 판 안 효과용, 지금은 0) */
+  runDefenseBonus = 0;
+  /** 클리어 자동 회수로 들어온 경험치. 최종 선택창 여부가 미정이라 레벨업·선택창 없이 기록만 한다 */
+  autoCollectedXp = { hero: 0, camp: 0 };
+  /** 호냥이 뒤로 놓친 재화·재료·경험치. 성공 시 자동 회수 대상(TEMP 해석), 실패 시 사라진다 */
+  behindDrops: Pickup[] = [];
 
   skills: RunSkills = { basicLevel: 1, exclusives: [], passives: {}, camp: {} };
   skillCd: Record<string, number> = {};
@@ -227,7 +265,8 @@ export class Battle {
 
   private nextId = 1;
   private scheduled: ScheduledHit[] = [];
-  private supportTimers = { barrier: 2, laser: 1.5, capsule: 6 };
+  private supportTimers = { barrier: 2, laser: 1.5, capsule: 6, prescription: 1.5 };
+  private panaceaCd = 0;
   private forceBellDrop: boolean;
 
   constructor(opts: BattleOptions) {
@@ -279,13 +318,20 @@ export class Battle {
       critChance: Math.min(P.caps.critChance, TUNING.player.baseCritChance + P.critChance * lv('critChance')),
       critMultiplier: TUNING.player.baseCritMultiplier + P.critDamage * lv('critDamage'),
       hpRegen: P.hpRegen * lv('hpRegen'),
-      damageTaken: 1 - Math.min(P.caps.defense, P.defense * lv('defense')),
+      defense: this.totalDefense(),
+      damageTaken: 100 / (100 + this.totalDefense()),
       evasion: Math.min(P.caps.evasion, P.evasion * lv('evasion')),
       energyRegen: TUNING.player.energyRegen * (1 + P.energyRegen * lv('energyRegen')),
       luck: this.loadout.baseLuck + P.luck * lv('luck'),
       pickupRadius: TUNING.pickups.magnetRadius * (1 + P.pickupRadius * lv('pickupRadius')),
       cooldownMul: 1 - Math.min(P.caps.cooldown, P.cooldown * lv('cooldown')),
     };
+  }
+
+  /** 최종 방어력 = 영구 스탯 + 장비(출격 시 loadout) + 판 임시 보너스(패시브 포함). 음수 방어는 미정 → 0으로 자름(TEMP) */
+  totalDefense(): number {
+    const d = this.loadout.defense + TUNING.passives.defense * this.passiveLevel('defense') + this.runDefenseBonus;
+    return Math.max(TUNING.defense.minDefense, d);
   }
 
   /** 남은 지정 처치 대상(스폰 대기 포함) */
@@ -396,7 +442,8 @@ export class Battle {
     // 처음부터 동행하는 지원 동료 + 구출해 합류한 전투 지원 동료. 슬롯 제한 없음.
     const list: CampSkillId[] = ['barrier', 'laser'];
     // 구출한 동료만 다음 출격부터 지원. 미래 동료는 활성화하지 않는다.
-    if (this.loadout.rescued.includes('kosyot')) list.push('capsule');
+    // 닥터 코숏: 캣닢 캡슐(HP)과 증상별 처방 두 갈래
+    if (this.loadout.rescued.includes('kosyot')) list.push('capsule', 'prescription');
     return list;
   }
 
@@ -443,6 +490,10 @@ export class Battle {
     p.invuln = Math.max(0, p.invuln - dt);
     p.hurt = Math.max(0, p.hurt - dt);
     p.attackAnim = Math.max(0, p.attackAnim - dt);
+    // 상태이상: 독·화상·출혈 지속 피해는 회피·방어·무적 시간과 무관하게 들어간다(DOT 태그)
+    const dot = this.heroStatus.tick(dt);
+    if (dot > 0) this.damagePlayer(dot, 'dot');
+    const frozen = this.heroStatus.frozen;
     // 기력: 기본 자연 회복 + 패시브 가속
     p.energy = Math.min(p.maxEnergy, p.energy + st.energyRegen * dt);
     // HP: '체력 회복력 증가' 습득 후에만 자연 회복, 피격 대기시간 없음
@@ -451,15 +502,18 @@ export class Battle {
     let wantMove: boolean;
     if (this.advanceMode === 'hold') wantMove = input.forward;
     else wantMove = !this.enemyAhead(150);
+    // 빙결: 이동·점프·공격 정지(빙결 자체 시간 제한 있음). 감속: 이동 속도만 감소(TEMP 범위)
+    if (frozen) wantMove = false;
 
     if (wantMove) {
-      let nx = p.x + TUNING.player.moveSpeed * dt;
+      let nx = p.x + TUNING.player.moveSpeed * this.heroStatus.moveMul * dt;
       nx = Math.min(nx, this.rightLimit);
       // 적에게 막힌다. 확정 규칙(frontBlock)에서는 점프 중에도 적을 뛰어넘어 뒤에 남기지 않는다.
       // 비교 도구(jumpPass)에서만 공중에서 넘어갈 수 있다.
       for (const e of this.enemies) {
         if (e.passed || e.x < p.x) continue;
         if (this.passPolicy === 'jumpPass' && !this.verticalOverlap(e)) continue;
+        if (e.def.flying) continue; // 공중 적은 지면 전진을 막지 않는다
         nx = Math.min(nx, e.x - (TUNING.player.width + e.def.width) / 2);
       }
       // 오른쪽 전진만 허용: 어떤 경우에도 x는 줄어들지 않는다.
@@ -467,7 +521,7 @@ export class Battle {
     }
     p.maxXReached = Math.max(p.maxXReached, p.x);
 
-    if (input.jump && this.grounded) p.vy = TUNING.player.jumpVelocity;
+    if (input.jump && this.grounded && !frozen) p.vy = TUNING.player.jumpVelocity;
     p.vy -= TUNING.world.gravity * dt;
     p.y = Math.max(0, p.y + p.vy * dt);
     if (p.y <= 0 && p.vy < 0) p.vy = 0;
@@ -478,7 +532,7 @@ export class Battle {
   }
 
   private enemyAhead(dist: number): boolean {
-    return this.enemies.some((e) => !e.passed && e.x > this.player.x && e.x - e.def.width / 2 - this.player.x < dist);
+    return this.enemies.some((e) => !e.passed && !e.def.flying && e.x > this.player.x && e.x - e.def.width / 2 - this.player.x < dist);
   }
 
   /** 확정: 호냥이와 캠프는 함께 움직이고 함께 멈추며 일정 간격을 유지한다(간격 수치 TEMP). 캠프는 지상. */
@@ -528,7 +582,9 @@ export class Battle {
     }
   }
 
-  private pickNormal(pool: { kind: EnemyKind; weight: number }[]): EnemyKind {
+  private pickNormal(allPool: { kind: EnemyKind; weight: number }[]): EnemyKind {
+    // 캠프 위협 시험 적(TEMP)은 설정에서 끌 수 있다
+    const pool = this.loadout.campThreatTest ? allPool : allPool.filter((p) => !ENEMIES[p.kind].temp);
     const total = pool.reduce((s, p) => s + p.weight, 0);
     let r = this.rng.next() * total;
     for (const p of pool) { r -= p.weight; if (r < 0) return p.kind; }
@@ -584,10 +640,10 @@ export class Battle {
     const def = ENEMIES[kind];
     const spawnX = x ?? this.chapter.waves[wave].triggerX + TUNING.waves.arenaLength + TUNING.waves.spawnAhead;
     const e: Enemy = {
-      id: this.nextId++, def, x: spawnX, y: 0, vy: 0, hp: def.hp, wave, required,
+      id: this.nextId++, def, x: spawnX, y: def.flying?.altitude ?? 0, vy: 0, hp: def.hp, wave, required,
       parentId: parent?.id ?? null, generation: parent ? parent.generation + 1 : 0,
       role: parent ? 'minion' : 'normal',
-      contactCd: 0, stun: 0, passed: false, state: 'walk', stateTimer: 0,
+      contactCd: 0, cc: 0, ccKind: null, slow: 0, slowMul: 1, dots: [], shots: 0, passed: false, state: 'walk', stateTimer: 0,
       cdA: 2, cdB: 3.5, rollTarget: 0, hopTimer: this.rng.range(0.5, 1.5), flash: 0,
     };
     this.enemies.push(e);
@@ -602,19 +658,29 @@ export class Battle {
     this.slowAll = Math.max(0, this.slowAll - dt);
     const campFront = this.camp.x + TUNING.camp.width / 2;
 
+    // 적 지속 피해: 일반·엘리트·보스 모두 적용, 수면을 깨우지 않는다
+    for (const e of [...this.enemies]) {
+      let dmg = 0;
+      for (const d of e.dots) { dmg += d.dps * Math.min(dt, d.remaining); d.remaining -= dt; }
+      e.dots = e.dots.filter((d) => d.remaining > 0);
+      if (dmg > 0) { e.hp -= dmg; if (e.hp <= 0) this.killEnemy(e); }
+    }
+
     for (const e of this.enemies) {
       e.contactCd = Math.max(0, e.contactCd - dt);
       e.flash = Math.max(0, e.flash - dt);
-      // 낙하
-      if (e.y > 0 || e.vy > 0) {
+      e.slow = Math.max(0, e.slow - dt);
+      // 낙하(공중 적 제외)
+      if (!e.def.flying && (e.y > 0 || e.vy > 0)) {
         e.vy -= TUNING.world.gravity * dt;
         e.y = Math.max(0, e.y + e.vy * dt);
         if (e.y === 0) e.vy = 0;
       }
-      if (e.stun <= 0) {
-        const speed = e.def.speed * slowMul;
+      if (e.cc <= 0) {
+        const speed = e.def.speed * slowMul * (e.slow > 0 ? e.slowMul : 1);
         if (e.def.kind === 'rollingRat') this.updateRollingRat(e, dt, speed);
         else if (e.def.kind === 'stompSole') this.updateBoss(e, dt, speed);
+        else if (e.def.campShot) this.updateShooter(e, dt, speed);
         else {
           if (e.def.kind === 'spikyBug') {
             e.hopTimer -= dt;
@@ -623,7 +689,8 @@ export class Battle {
           this.walkLeft(e, speed * dt);
         }
       } else {
-        e.stun -= dt;
+        e.cc -= dt;
+        if (e.cc <= 0) { e.cc = 0; e.ccKind = null; }
       }
 
       // 전방 전투안(TEMP 시험): 적은 호냥이 앞면에서 멈춘다. 호냥이가 점프 중이어도 아래로 지나가지 못해,
@@ -641,9 +708,9 @@ export class Battle {
 
       // 호냥이 접촉 피해(적의 직접 공격)
       const overlapX = Math.abs(e.x - p.x) < (TUNING.player.width + e.def.width) / 2;
-      if (overlapX && this.verticalOverlap(e) && e.contactCd <= 0 && e.stun <= 0) {
-        if (this.damagePlayer(e.def.contactDamage, 'direct')) e.contactCd = e.def.contactInterval;
-        else e.contactCd = e.def.contactInterval; // 회피·무적도 공격 1회로 본다
+      if (overlapX && e.def.contactDamage > 0 && this.verticalOverlap(e) && e.contactCd <= 0 && e.cc <= 0) {
+        this.damagePlayer(e.def.contactDamage, 'direct', this.testStatus(e.def.testStatus, e.def.name));
+        e.contactCd = e.def.contactInterval; // 회피·무적도 공격 1회로 본다
       }
 
       // 통과·이탈 감지(자동 처치/도주 처리 없이 기록만 한다)
@@ -700,6 +767,42 @@ export class Battle {
     }
   }
 
+  /**
+   * 캠프 위협 시험 적(TEMP). 호냥이 앞 standoff 거리에 머물며 예고(조준선/낙하 그림자) 뒤 캠프로 투사체를 보낸다.
+   * 호냥이 뒤로 넘어가지 않는다. 정해진 횟수를 던진 뒤에는 앞까지 다가온다(지상: 근접, 공중: 머리 위에서 계속 투하).
+   */
+  private updateShooter(e: Enemy, dt: number, speed: number): void {
+    const C = e.def.campShot!;
+    const p = this.player;
+    const close = e.shots >= C.shotsBeforeAdvance;
+    if (close && !e.def.flying) { this.walkLeft(e, speed * dt); return; }
+    const holdX = p.x + (close ? (TUNING.player.width + e.def.width) / 2 + 10 : C.standoff);
+    e.cdA -= dt;
+    if (e.state === 'walk') {
+      if (e.x > holdX) e.x = Math.max(holdX, e.x - speed * dt);
+      const ready = e.x - holdX < 40 && e.x - p.x < TUNING.world.viewAhead - 60;
+      if (ready && e.cdA <= 0) {
+        e.state = 'aim';
+        e.stateTimer = C.telegraph;
+        if (C.style === 'lob') this.addEffect({ kind: 'aim', x1: this.camp.x, x2: e.x, y1: 60, y2: e.y + e.def.height / 2, ttl: C.telegraph, text: '캠프 조준!' });
+        else this.addEffect({ kind: 'dropMark', x1: this.camp.x - 40, x2: this.camp.x + 40, y1: 0, y2: 0, ttl: C.telegraph + C.duration, text: '낙하 예고!' });
+      }
+    } else if (e.state === 'aim') {
+      e.stateTimer -= dt;
+      if (e.stateTimer <= 0) {
+        const sx = e.x - e.def.width / 2;
+        this.hazards.push({
+          kind: 'campShot', style: C.style, x: sx, y: C.startY, vx: 0, progress: 0, startX: sx, targetX: this.camp.x,
+          radius: C.radius, damage: C.campDamage, hp: C.hp, maxHp: C.hp, duration: C.duration, startY: C.style === 'drop' ? e.y : C.startY,
+          endY: C.endY, arc: C.arc, hitPlayer: false, done: false,
+        });
+        e.shots++;
+        e.cdA = C.cooldown;
+        e.state = 'walk';
+      }
+    }
+  }
+
   private updateBoss(e: Enemy, dt: number, speed: number): void {
     const p = this.player;
     const gap = e.x - e.def.width / 2 - (p.x + TUNING.player.width / 2);
@@ -724,7 +827,7 @@ export class Battle {
       e.stateTimer -= dt;
       if (e.stateTimer <= 0) {
         const S = BOSS_PATTERNS.shockwave;
-        this.hazards.push({ kind: 'shockwave', x: e.x - e.def.width / 2, y: 0, vx: -S.speed, progress: 0, startX: 0, targetX: 0, radius: S.width / 2, damage: S.damage, hp: 0, hitPlayer: false, done: false });
+        this.hazards.push({ kind: 'shockwave', x: e.x - e.def.width / 2, y: 0, vx: -S.speed, progress: 0, startX: 0, targetX: 0, radius: S.width / 2, damage: S.damage, hp: 0, maxHp: 0, duration: 0, startY: 0, endY: 0, arc: 0, hitPlayer: false, done: false });
         e.state = 'walk';
         e.cdA = S.cooldown;
       }
@@ -733,7 +836,7 @@ export class Battle {
       if (e.stateTimer <= 0) {
         const R = BOSS_PATTERNS.rockThrow;
         const sx = e.x - e.def.width / 2;
-        this.hazards.push({ kind: 'bigRock', x: sx, y: R.startY, vx: 0, progress: 0, startX: sx, targetX: this.camp.x, radius: R.radius, damage: R.campDamage, hp: R.hp, hitPlayer: false, done: false });
+        this.hazards.push({ kind: 'bigRock', x: sx, y: R.startY, vx: 0, progress: 0, startX: sx, targetX: this.camp.x, radius: R.radius, damage: R.campDamage, hp: R.hp, maxHp: R.hp, duration: R.duration, startY: R.startY, endY: R.endY, arc: R.arc, hitPlayer: false, done: false });
         e.state = 'walk';
       }
     }
@@ -742,26 +845,31 @@ export class Battle {
   private updateHazards(dt: number): void {
     const p = this.player;
     const S = BOSS_PATTERNS.shockwave;
-    const R = BOSS_PATTERNS.rockThrow;
     const slow = this.slowAll > 0 ? 0.5 : 1;
     for (const h of this.hazards) {
       if (h.kind === 'shockwave') {
         h.x += h.vx * dt * slow;
         const hit = Math.abs(h.x - p.x) < h.radius + TUNING.player.width / 2 && p.y < S.height;
-        if (hit && !h.hitPlayer) { this.damagePlayer(h.damage, 'direct'); h.hitPlayer = true; }
+        if (hit && !h.hitPlayer) { this.damagePlayer(h.damage, 'direct', this.testStatus(S.testStatus, '충격파')); h.hitPlayer = true; }
         if (h.x <= this.camp.x + TUNING.camp.width / 2) {
           this.damageCamp(S.campDamage);
           h.done = true;
         }
       } else {
-        // 큰 돌: 보스 손에서 캠프까지 포물선. 호냥이는 맞지 않고, 캠프에 닿으면 멘탈 피해.
-        h.progress = Math.min(1, h.progress + (dt * slow) / R.duration);
+        // 큰 돌·캠프 조준 투사체: 던진 곳에서 캠프까지 포물선. 캠프에 닿으면 멘탈 피해.
+        h.progress = Math.min(1, h.progress + (dt * slow) / h.duration);
         const s = h.progress;
         h.x = h.startX + (h.targetX - h.startX) * s;
-        h.y = R.startY + (R.endY - R.startY) * s + 4 * R.arc * s * (1 - s);
+        h.y = h.startY + (h.endY - h.startY) * s + 4 * h.arc * s * (1 - s);
+        // 캠프 조준 투사체는 호냥이 몸(점프 포함)에 닿으면 요격된다. 큰 돌은 몸에 맞지 않는다(펀치로 파괴).
+        if (h.kind === 'campShot' && Math.abs(h.x - p.x) < h.radius + TUNING.player.width / 2
+          && h.y + h.radius >= p.y && h.y - h.radius <= p.y + TUNING.player.height) {
+          this.breakShot(h, 'body');
+          continue;
+        }
         if (s >= 1) {
           this.damageCamp(h.damage);
-          this.logEvent('rockHitCamp');
+          this.logEvent(h.kind === 'bigRock' ? 'rockHitCamp' : 'shotHitCamp');
           this.addEffect({ kind: 'hit', x1: h.x - 30, x2: h.x + 30, y1: h.y - 30, y2: h.y + 30, ttl: 0.3, color: 0x9a8f7a });
           h.done = true;
         }
@@ -788,15 +896,29 @@ export class Battle {
       .sort((a, b) => a.x - b.x);
   }
 
-  /** 기본 공격 사거리 안의 큰 돌(공중 펀치 대상) */
+  /** 기본 공격 사거리 안의 큰 돌·캠프 조준 투사체(공중 펀치 대상) */
   private rockInPunchReach(range: number): Hazard | undefined {
     const p = this.player;
     const front = p.x + TUNING.player.width / 2;
-    const top = p.y + TUNING.player.height + TUNING.player.punchReachUp;
-    return this.hazards.find((h) => h.kind === 'bigRock' && h.x >= p.x && h.x - h.radius <= front + range && h.y - h.radius <= top && h.y + h.radius >= p.y);
+    const top = this.punchTop();
+    return this.hazards.find((h) => h.kind !== 'shockwave' && !h.done && h.x >= p.x - h.radius && h.x - h.radius <= front + range && h.y - h.radius <= top && h.y + h.radius >= p.y);
+  }
+
+  /** 기본 공격이 닿는 높이(머리 위 공중 펀치 포함) */
+  private punchTop(): number {
+    return this.player.y + TUNING.player.height + TUNING.player.punchReachUp;
+  }
+
+  private breakShot(h: Hazard, by: 'punch' | 'body' | 'skill'): void {
+    if (h.done) return;
+    h.done = true;
+    this.logEvent('shotBroken', by);
+    this.addEffect({ kind: 'hit', x1: h.x - 16, x2: h.x + 16, y1: h.y - 16, y2: h.y + 16, ttl: 0.25, color: 0xe8e0c8 });
+    this.addEffect({ kind: 'text', x1: h.x, x2: h.x, y1: h.y + 24, y2: 0, ttl: 0.5, text: '요격!' });
   }
 
   private hitRock(h: Hazard, dmg: number): void {
+    if (h.kind === 'campShot') { h.hp -= dmg; if (h.hp <= 0) this.breakShot(h, 'punch'); return; }
     h.hp -= dmg;
     if (h.hp <= 0 && !h.done) {
       h.done = true;
@@ -811,11 +933,15 @@ export class Battle {
     const B = TUNING.basicAttack;
     const lvl = this.skills.basicLevel;
 
-    // 기본 공격: 무소모 자동 전방 공격. 날아오는 큰 돌이 닿으면 돌을 먼저 친다(공중 펀치).
+    // 빙결 중에는 기본 공격·전용 기술 정지(쿨타임은 흐른다)
+    const frozen = this.heroStatus.frozen;
+    // 기본 공격: 무소모 자동 전방 공격. 날아오는 큰 돌·투사체가 닿으면 먼저 친다(공중 펀치).
     p.basicTimer -= dt;
-    if (p.basicTimer <= 0) {
+    if (p.basicTimer <= 0 && !frozen) {
       const rock = this.rockInPunchReach(B.range);
-      const target = rock ? null : this.frontEnemies(B.range)[0];
+      const top = this.punchTop();
+      // 공중 적은 펀치가 닿는 높이일 때만(점프해서 친다)
+      const target = rock ? null : this.frontEnemies(B.range).find((e) => !e.def.flying || e.y <= top);
       if (rock || target) {
         const { dmg, crit } = this.rollDamage(B.damage * (1 + B.damagePerLevel * (lvl - 1)), 'basic', st);
         if (rock) this.hitRock(rock, dmg);
@@ -830,7 +956,7 @@ export class Battle {
     for (const owned of this.skills.exclusives) {
       const def = this.weapon.exclusives.find((d) => d.id === owned.id)!;
       this.skillCd[def.id] = Math.max(0, (this.skillCd[def.id] ?? 0) - dt);
-      if (this.skillCd[def.id] > 0 || p.energy < def.energy) continue;
+      if (frozen || this.skillCd[def.id] > 0 || p.energy < def.energy) continue;
       if (this.frontEnemies(def.triggerRange).length === 0) continue;
       const gi = owned.level - 1;
       const dmgMul = TUNING.growth.gradeDamage[owned.grade][gi];
@@ -865,7 +991,7 @@ export class Battle {
           }
         }
         for (const h of this.hazards) {
-          if (h.kind === 'bigRock' && h.x + h.radius >= a.x1 && h.x - h.radius <= a.x2 && h.y + h.radius >= a.y1 && h.y - h.radius <= a.y2) {
+          if (h.kind !== 'shockwave' && h.x + h.radius >= a.x1 && h.x - h.radius <= a.x2 && h.y + h.radius >= a.y1 && h.y - h.radius <= a.y2) {
             this.hitRock(h, this.rollDamage(s.damage, 'skill', st).dmg);
           }
         }
@@ -899,13 +1025,49 @@ export class Battle {
     if (!this.enemies.includes(e)) return;
     e.hp -= dmg;
     e.flash = 0.1;
-    if (stun > 0) e.stun = Math.max(e.stun, stun);
+    // 직접 피격은 수면을 깨운다(DOT는 깨우지 않음)
+    if (e.ccKind === 'sleep') { e.cc = 0; e.ccKind = null; }
+    if (stun > 0) this.applyEnemyCc(e, 'stun', stun);
     if (crit) this.logEvent('crit');
     this.addEffect({ kind: 'text', x1: e.x, x2: e.x, y1: e.def.height + 10, y2: 0, ttl: 0.5, text: crit ? `${Math.round(dmg)}!` : `${Math.round(dmg)}`, color: crit ? 0xffd34d : undefined });
     if (e.hp <= 0) this.killEnemy(e);
   }
 
+  // ───────────────────────── 적 제어·지속 피해(등급별 저항)
+
+  /**
+   * 수면·기절·빙결. 일반: 그대로, 엘리트: 시간 단축, 보스: 행동정지 대신 짧은 감속(패턴 취소 없음).
+   * 보스 기절로 패턴을 끊는 예외는 미확정이라 만들지 않는다.
+   */
+  applyEnemyCc(e: Enemy, kind: EnemyCcKind, duration: number): void {
+    const C = TUNING.enemyCc;
+    if (e.def.rank === 'boss') {
+      e.slow = Math.max(e.slow, C.bossSlowDuration);
+      e.slowMul = C.bossSlowMul;
+      this.logEvent('enemyCc', `${e.def.name}:${kind}→slow`);
+      return;
+    }
+    const dur = e.def.rank === 'elite' ? duration * C.eliteDurationMul : duration;
+    if (dur > e.cc) { e.cc = dur; e.ccKind = kind; }
+    this.logEvent('enemyCc', `${e.def.name}:${kind}`, dur);
+  }
+
+  /** 밀쳐내기(오른쪽). 일반: 그대로, 엘리트: 거리 감소, 보스: 위치 이동 면역 */
+  knockback(e: Enemy, dist: number): void {
+    if (e.def.rank === 'boss') return;
+    e.x += e.def.rank === 'elite' ? dist * TUNING.enemyCc.eliteKnockbackMul : dist;
+  }
+
+  /** 적 지속 피해. 전 등급 적용. 같은 종류는 강한 쪽 유지·시간 갱신(호냥이와 같은 규칙을 임시 적용) */
+  applyEnemyDot(e: Enemy, tag: DotTag, dps: number, duration: number, source: string): void {
+    const cur = e.dots.find((d) => d.tag === tag);
+    if (!cur) { e.dots.push({ tag, dps, remaining: duration, source }); return; }
+    if (dps > cur.dps) { cur.dps = dps; cur.source = source; }
+    cur.remaining = Math.max(cur.remaining, duration);
+  }
+
   private killEnemy(e: Enemy): void {
+    if (!this.enemies.includes(e)) return;
     this.enemies = this.enemies.filter((x) => x !== e);
     if (e.role === 'normal') {
       const w = this.waves[e.wave];
@@ -969,7 +1131,7 @@ export class Battle {
       case 'defSlow': this.slowAll = 5; break;
       case 'defReflect':
         this.hazards = [];
-        for (const e of this.enemies) if (!e.passed && e.def.rank !== 'boss') e.x += 120;
+        for (const e of this.enemies) if (!e.passed) this.knockback(e, 120);
         break;
       case 'healHero': p.hp = p.maxHp; break;
       case 'healCamp': this.camp.mental = this.camp.maxMental; break;
@@ -1007,7 +1169,7 @@ export class Battle {
       }
     }
 
-    // 닥터 코숏 캣닢 캡슐: 구출 이후 출격부터, 호냥이 앞쪽에 투하
+    // 닥터 코숏: 구출 이후 출격부터. 두 갈래 — 캣닢 캡슐(HP) / 증상별 처방(상태이상 약)
     if (this.loadout.rescued.includes('kosyot')) {
       this.supportTimers.capsule -= dt;
       if (this.supportTimers.capsule <= 0) {
@@ -1016,7 +1178,47 @@ export class Battle {
         pk.y = 160;
         this.supportTimers.capsule = S.capsule.interval - S.capsule.levelInterval * lv('capsule');
       }
+      this.panaceaCd = Math.max(0, this.panaceaCd - dt);
+      this.supportTimers.prescription -= dt;
+      if (this.supportTimers.prescription <= 0) {
+        const med = this.choosePrescription();
+        if (med) {
+          const pk = this.dropPickup('medicine', this.player.x + S.prescription.dropAhead, 0);
+          pk.medId = med;
+          pk.lifetime = S.prescription.lifetime;
+          pk.y = 160;
+          if (med === 'panacea') this.panaceaCd = S.panacea.cooldown;
+          this.logEvent('prescribe', med);
+          this.supportTimers.prescription = S.prescription.interval - S.prescription.levelInterval * lv('prescription');
+        } else {
+          this.supportTimers.prescription = S.prescription.retry;
+        }
+      }
     }
+  }
+
+  /**
+   * 증상별 처방(확정): 빙결 → 감속 → 독/화상/출혈 중 초당 피해 최대. 한 번에 한 개, 다음 처방 때 다시 판단.
+   * 같은 약이 이미 바닥·비행 중이면 중복 투하를 피한다(그때 다음 증상/대기는 TEMP 설정).
+   * 만능 처방약(진화)과 개별 약의 대체/병행은 미정이라 TUNING.supports.panacea.policy(TEMP)로 고른다.
+   */
+  choosePrescription(): MedicineId | null {
+    const order = prescriptionOrder(this.heroStatus);
+    if (order.length === 0) return null;
+    const S = TUNING.supports;
+    const inField = new Set(this.pickups.filter((p) => p.kind === 'medicine').map((p) => p.medId));
+    if (inField.has('panacea')) return null; // 만능약이 오는 중이면 전부 해결될 예정
+    if (this.loadout.panacea) {
+      const wantPanacea = S.panacea.policy === 'replace' || order.length >= S.panacea.minSymptoms;
+      if (wantPanacea && this.panaceaCd <= 0) return 'panacea';
+      if (S.panacea.policy === 'replace') return null;
+    }
+    for (const tag of order) {
+      const id = MEDICINE_FOR[tag];
+      if (!inField.has(id)) return id;
+      if (S.prescriptionOnDuplicate === 'wait') return null;
+    }
+    return null;
   }
 
   // ───────────────────────── 드롭·수집
@@ -1058,7 +1260,9 @@ export class Battle {
       const expired = pk.lifetime !== null && pk.age > pk.lifetime;
       const leftBehind = pk.kind !== 'key' && pk.x < p.x - TUNING.pickups.missedBehind;
       if (expired || leftBehind) {
-        this.logEvent('missedPickup', pk.lootId ?? pk.kind, pk.value);
+        this.logEvent('missedPickup', pk.lootId ?? pk.medId ?? pk.kind, pk.value);
+        // 뒤로 놓친 재화·재료·경험치는 성공 시 자동 회수 대상으로 남긴다(TEMP 해석). 시간 제한 보급은 사라진다.
+        if (leftBehind && !expired && (pk.kind === 'loot' || pk.kind === 'catnip' || pk.kind === 'gear')) this.behindDrops.push(pk);
         continue;
       }
       keep.push(pk);
@@ -1104,11 +1308,56 @@ export class Battle {
         this.banner('감옥 열쇠 획득!', 1.6);
         break;
       case 'capsule':
-        // 미정: HP가 가득일 때 캡슐 처리. 지금은 그대로 사용(낭비)된다.
+        // 확정: 도착 즉시 소모, 보관 없음, HP 상한 초과 없음(가득이면 그대로 소모)
         this.player.hp = Math.min(this.player.maxHp, this.player.hp + pk.value);
         this.addEffect({ kind: 'text', x1: this.player.x, x2: 0, y1: 80, y2: 0, ttl: 0.7, text: `+${pk.value}`, color: 0x8ef0a0 });
         break;
+      case 'medicine': {
+        // 확정: 필요 없어도 도착 즉시 소모, 보관 없음. 해당 약은 해당 증상만 푼다.
+        const med = MEDICINES[pk.medId!];
+        const removed = this.heroStatus.cure(med.cures);
+        this.logEvent('cure', med.id, removed.length);
+        this.addEffect({ kind: 'text', x1: this.player.x, x2: 0, y1: 92, y2: 0, ttl: 0.9, text: removed.length ? `${med.name}! ${removed.map((t) => STATUS_NAMES[t]).join('·')} 해제` : med.name, color: 0xbff7c0 });
+        break;
+      }
     }
+  }
+
+  /**
+   * 확정: 성공 시 필드에 남은 드롭 자동 회수(감옥은 직접 상호작용이라 제외).
+   * 재화·재료는 판 획득물로 정산. 경험치는 최종 선택창 여부가 미정이라 레벨업·선택창 없이 기록만 한다(완료 정산에서 소멸).
+   * 보급(캡슐·약)·방울은 판이 끝나 효과가 없어 그대로 사라진다.
+   */
+  private autoCollectOnVictory(): void {
+    const all = [...this.pickups, ...this.behindDrops];
+    let n = 0;
+    for (const pk of all) {
+      if (pk.kind === 'loot' && pk.lootId) {
+        this.loot[pk.lootId] = (this.loot[pk.lootId] ?? 0) + pk.value;
+        this.logEvent('loot', pk.lootId, pk.value);
+        n++;
+      } else if (pk.kind === 'catnip') { this.autoCollectedXp.hero += pk.value; n++; }
+      else if (pk.kind === 'gear') { this.autoCollectedXp.camp += pk.value; n++; }
+    }
+    this.pickups = [];
+    this.behindDrops = [];
+    this.logEvent('autoCollect', undefined, n);
+  }
+
+  /** [시험] 적 상태이상: 설정에서 켰을 때만 공격에 상태이상을 붙인다 */
+  private testStatus(spec: { tag: StatusApply['tag']; intensity: number; duration: number } | undefined, source: string): StatusApply | undefined {
+    if (!spec || !this.loadout.statusTest) return undefined;
+    return { ...spec, source };
+  }
+
+  /**
+   * 호냥이 상태이상 적용(외부·테스트용 진입점 포함). 회피는 damagePlayer에서 이미 걸러진다.
+   */
+  applyHeroStatus(a: StatusApply): void {
+    const r = this.heroStatus.apply(a);
+    if (r === 'immune') { this.logEvent('statusImmune', a.tag); return; }
+    this.logEvent('status', `${a.tag}:${r}`, a.intensity);
+    if (r === 'applied') this.addEffect({ kind: 'text', x1: this.player.x, x2: 0, y1: 104, y2: 0, ttl: 0.7, text: STATUS_NAMES[a.tag], color: 0xd0a0ff });
   }
 
   // ───────────────────────── 피해·패배·구출
@@ -1117,18 +1366,29 @@ export class Battle {
    * 호냥이 피해. 직접 공격은 회피 판정(성공 시 피해·동반 상태이상 무효), 방어력 감소 적용.
    * @returns 실제로 피해를 받았는지
    */
-  damagePlayer(n: number, kind: DamageKind = 'direct'): boolean {
+  damagePlayer(n: number, kind: DamageKind = 'direct', status?: StatusApply): boolean {
     const p = this.player;
-    if (p.invuln > 0 || this.finished || p.hp <= 0) return false;
+    if (this.finished || p.hp <= 0) return false;
+    // 지속 피해(DOT·지형): 회피·방어력·피격 무적과 무관
+    if (kind !== 'direct') {
+      p.hp -= n;
+      if (p.hp <= 0) p.hp = 0;
+      return true;
+    }
+    if (p.invuln > 0) return false;
     const st = this.stats();
-    if (kind === 'direct' && st.evasion > 0 && this.rng.chance(st.evasion)) {
+    // 회피 성공 시 피해와 그 공격의 상태이상 모두 무효
+    if (st.evasion > 0 && this.rng.chance(st.evasion)) {
       this.logEvent('evade');
       this.addEffect({ kind: 'text', x1: p.x, x2: 0, y1: 70, y2: 0, ttl: 0.5, text: '회피!', color: 0xbff7ff });
       return false;
     }
-    p.hp -= n * st.damageTaken;
+    // 확정 공식: 원래 피해 × 100/(100+방어력). 반올림은 미정(TEMP 옵션)
+    const raw = n * st.damageTaken;
+    p.hp -= TUNING.defense.round ? Math.round(raw) : raw;
     p.invuln = TUNING.player.contactInvuln;
     p.hurt = 0.25;
+    if (status) this.applyHeroStatus(status);
     // HP 0 처리(방울 부활 포함)는 이 틱 끝 resolveDefeat()에서 캠프 판정 뒤에 한다
     if (p.hp <= 0) p.hp = 0;
     return true;
@@ -1191,6 +1451,7 @@ export class Battle {
   }
 
   private finish(outcome: 'victory' | 'defeat'): void {
+    if (outcome === 'victory') this.autoCollectOnVictory();
     this.mode = outcome;
     this.pending = [];
     this.logEvent(outcome, this.defeatCause ?? undefined);

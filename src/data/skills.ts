@@ -93,8 +93,8 @@ export const PASSIVES: Record<PassiveId, { name: string; desc: string }> = {
   critDamage: { name: '치명타 피해 증가', desc: '치명타 피해 배율' },
   maxHp: { name: '최대 체력 증가', desc: '최대 HP 증가분만큼 현재 HP도 증가' },
   hpRegen: { name: '체력 회복력 증가', desc: '자연 HP 회복 활성화·초당 회복량 증가' },
-  defense: { name: '방어력 증가', desc: '받는 피해 감소 (계산식 미정)' },
-  evasion: { name: '회피 확률 증가', desc: '적 직접 공격 피해·동반 상태이상 무효' },
+  defense: { name: '방어력 증가', desc: '직접 피해 ×100/(100+방어력), 독·화상·출혈·지형 피해 제외' },
+  evasion: { name: '회피 확률 증가', desc: '적 직접 공격 피해·동반 상태이상 무효(장판 지속 피해 제외)' },
   maxEnergy: { name: '최대 냥기력 증가', desc: '최대 기력 증가분만큼 현재 기력도 증가' },
   energyRegen: { name: '냥기력 회복력 증가', desc: '기본 기력 자연 회복 속도 강화' },
   luck: { name: '행운 증가', desc: '희귀 스킬 등장·레어 드롭' },
@@ -106,11 +106,12 @@ export const PASSIVES: Record<PassiveId, { name: string; desc: string }> = {
  * 캠프 선택창 후보(캠프 경험치). 합류한 전투 지원 동료 전부 기본 활성·슬롯 제한 없음, 각 판 안 Lv.5.
  * 전투 지원이 없는 동료(깡깡이·나비)에게는 기술을 만들지 않는다. 등급/행운 적용은 미정.
  */
-export type CampSkillId = 'barrier' | 'laser' | 'capsule';
+export type CampSkillId = 'barrier' | 'laser' | 'capsule' | 'prescription';
 export const CAMP_SKILLS: Record<CampSkillId, { name: string; desc: string; companion: string | null }> = {
   barrier: { name: '골골송 배리어 강화', desc: '수염할아버지 배리어 보호량·주기 강화', companion: 'grandpa' },
   laser: { name: '서치 레이저 강화', desc: '삐콩이 레이저 피해·주기 강화', companion: 'pikong' },
   capsule: { name: '캣닢 캡슐 강화', desc: '코숏 캡슐 회복량·주기 강화', companion: 'kosyot' },
+  prescription: { name: '증상별 처방 강화', desc: '코숏이 증상에 맞는 약을 더 자주 투하(빙결→감속→가장 아픈 DOT)', companion: 'kosyot' },
 };
 
 /**

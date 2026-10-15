@@ -36,7 +36,13 @@ export interface SaveData {
    * 정상 종료 정산과 같은 저장 쓰기에서 지워진다. 앱이 도중에 꺼져 남아 있으면 다음 실행 때 중도 종료로 정산한다.
    */
   activeRun: { runId: number; chapterId: number; loot: Partial<Record<LootId, number>> } | null;
-  settings: { advanceMode: AdvanceMode; passPolicy: PassPolicy; bgmVolume: number; sfxVolume: number };
+  settings: {
+    advanceMode: AdvanceMode; passPolicy: PassPolicy; bgmVolume: number; sfxVolume: number;
+    /** [시험] 캠프 위협 A/B 임시 적 등장 */
+    campThreatTest: boolean;
+    /** [시험] 적 공격의 상태이상(치료·처방 확인용). Ch 1 적 상태이상은 기획 미정 */
+    statusTest: boolean;
+  };
 }
 
 export function newSave(): SaveData {
@@ -57,7 +63,10 @@ export function newSave(): SaveData {
     nextRunId: 1,
     stats: { runs: 0, clears: 0, defeats: 0, quits: 0 },
     activeRun: null,
-    settings: { advanceMode: TUNING.defaultAdvanceMode, passPolicy: TUNING.defaultPassPolicy, bgmVolume: 0.6, sfxVolume: 0.8 },
+    settings: {
+      advanceMode: TUNING.defaultAdvanceMode, passPolicy: TUNING.defaultPassPolicy, bgmVolume: 0.6, sfxVolume: 0.8,
+      campThreatTest: true, statusTest: false,
+    },
   };
 }
 
@@ -137,6 +146,7 @@ export function canBuyNode(save: SaveData, id: string): BuyResult {
   const lvl = nodeLevel(save, id);
   if (lvl >= node.maxLevel) return 'max';
   if (node.requires?.some((r) => nodeLevel(save, r) <= 0)) return 'locked';
+  if (node.requiresRescue && !save.rescued.includes(node.requiresRescue)) return 'locked';
   if (save.currencies[node.currency] < node.cost(lvl)) return 'poor';
   return 'ok';
 }
@@ -178,6 +188,20 @@ export interface Loadout {
   weapon: WeaponId;
   /** 장착 무기 기본 공격력·강화 보너스 배율 */
   weaponAttackMul: number;
+  /** 영구 방어력 + 장비 방어력(판 임시 보너스는 전투 중 더한다) */
+  defense: number;
+  /** 코숏의 만능 처방약 해금(골골기어 영구 진화) */
+  panacea: boolean;
+  campThreatTest: boolean;
+  statusTest: boolean;
+}
+
+/**
+ * 장착 장비의 방어 포인트. 몸통·발 보호구 제작표·수치가 아직 없어 0(TEMP 자리).
+ * 보호구 데이터가 오면 여기서 합산한다.
+ */
+export function equipmentDefense(_save: SaveData): number {
+  return 0;
 }
 
 export function buildLoadout(save: SaveData): Loadout {
@@ -193,5 +217,9 @@ export function buildLoadout(save: SaveData): Loadout {
     passPolicy: save.settings.passPolicy,
     weapon: save.equipment.weapon,
     weaponAttackMul: equippedWeaponAttackMul(save),
+    defense: TUNING.defense.base + nodeLevel(save, 'def') * TUNING.defense.perNodeLevel + equipmentDefense(save),
+    panacea: nodeLevel(save, 'panacea') > 0,
+    campThreatTest: save.settings.campThreatTest,
+    statusTest: save.settings.statusTest,
   };
 }

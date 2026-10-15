@@ -77,7 +77,7 @@ describe('처치 카운트·웨이브 진행', () => {
   });
 
   test('왕먼지 슬라임 분열 자식까지 추적하고, 자식이 남으면 웨이브가 끝나지 않는다', () => {
-    const { battle: b } = runBot({ seed: 2 });
+    const { battle: b } = runBot({ seed: 3 });
     const split = b.log.find((l) => l.type === 'split')!;
     expect(split.value).toBe(3);
     expect(b.childrenSpawned).toBe(3);
@@ -203,14 +203,15 @@ describe('구출', () => {
     expect(b.result().rescued).toBeNull();
   });
 
-  test('코숏 지원은 구출 전에는 없고, 구출 후 출격부터 캠프 선택지와 캡슐이 생긴다', () => {
+  test('코숏 지원은 구출 전에는 없고, 구출 후 출격부터 캠프 선택지(캡슐·증상별 처방)와 캡슐이 생긴다', () => {
     const before = fresh();
     step(before, 20, { forward: true, jump: false, ult: null });
     expect(before.log.length).toBeGreaterThan(0);
     expect((before as any).availableCampSkills()).not.toContain('capsule');
     const after = fresh(3, (s) => s.rescued.push('kosyot'));
     expect((after as any).availableCampSkills()).toContain('capsule');
-    step(after, 8);
+    expect((after as any).availableCampSkills()).toContain('prescription');
+    step(after, 6.1);
     expect(after.pickups.some((p) => p.kind === 'capsule')).toBe(true);
     // 투하 위치는 호냥이 앞쪽
     const cap = after.pickups.find((p) => p.kind === 'capsule')!;

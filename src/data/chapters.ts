@@ -36,6 +36,7 @@ export interface ChapterDef {
 /**
  * Ch 1 말랑 운석 평원. 3웨이브·엘리트 1/엘리트 2/보스 구성과 적 종류는 확정,
  * 목표 처치 수·동시 수·간격·지점은 TEMP.
+ * pebbleRat(캠프 위협 A)·dustBat(B)은 시험 적(TEMP). 설정의 '[시험] 캠프 위협 A/B'를 끄면 풀에서 빠진다.
  */
 export const CHAPTER_1: ChapterDef = {
   id: 1,
@@ -44,17 +45,17 @@ export const CHAPTER_1: ChapterDef = {
   waves: [
     {
       triggerX: 700,
-      normal: { pool: [{ kind: 'dustSlime', weight: 3 }, { kind: 'spikyBug', weight: 2 }], killTarget: 9, maxAlive: 5, interval: 1.3 }, // TEMP
+      normal: { pool: [{ kind: 'dustSlime', weight: 3 }, { kind: 'spikyBug', weight: 2 }, { kind: 'pebbleRat', weight: 1 }], killTarget: 9, maxAlive: 5, interval: 1.3 }, // TEMP
       finale: 'rollingRat',
     },
     {
       triggerX: 1900,
-      normal: { pool: [{ kind: 'spikyBug', weight: 2 }, { kind: 'meteorRat', weight: 2 }, { kind: 'dustSlime', weight: 2 }], killTarget: 12, maxAlive: 6, interval: 1.1 }, // TEMP
+      normal: { pool: [{ kind: 'spikyBug', weight: 2 }, { kind: 'meteorRat', weight: 2 }, { kind: 'dustSlime', weight: 2 }, { kind: 'pebbleRat', weight: 2 }, { kind: 'dustBat', weight: 2 }], killTarget: 12, maxAlive: 6, interval: 1.1 }, // TEMP
       finale: 'kingDustSlime',
     },
     {
       triggerX: 3100,
-      normal: { pool: [{ kind: 'meteorRat', weight: 3 }, { kind: 'dustSlime', weight: 2 }, { kind: 'spikyBug', weight: 2 }], killTarget: 13, maxAlive: 7, interval: 1.0 }, // TEMP
+      normal: { pool: [{ kind: 'meteorRat', weight: 3 }, { kind: 'dustSlime', weight: 2 }, { kind: 'spikyBug', weight: 2 }, { kind: 'pebbleRat', weight: 2 }, { kind: 'dustBat', weight: 2 }], killTarget: 13, maxAlive: 7, interval: 1.0 }, // TEMP
       finale: 'stompSole',
     },
   ],

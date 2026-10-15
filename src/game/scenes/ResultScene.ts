@@ -40,8 +40,12 @@ export class ResultScene extends Phaser.Scene {
       `시간 ${result.time.toFixed(0)}초 · 호냥이 Lv.${result.heroLevel}`,
       `지정 처치 ${result.kills.required}/${result.kills.requiredTotal} · 분열 처치 ${result.kills.children}`,
       `호냥이를 지나친 적 ${passes} · 화면 밖 이탈 ${oob}`,
-      `놓친 드롭 ${missed} (주운 것만 정산)`,
+      result.outcome === 'victory'
+        ? `클리어 자동 회수 ${log.find((l) => l.type === 'autoCollect')?.value ?? 0}개 (경험치는 선택창 없이 소멸)`
+        : `놓친 드롭 ${missed} (주운 것만 정산)`,
       `큰 돌 파괴 ${log.filter((l) => l.type === 'rockBroken').length} · 캠프 명중 ${log.filter((l) => l.type === 'rockHitCamp').length}`,
+      `캠프 조준 요격 ${log.filter((l) => l.type === 'shotBroken').length} · 캠프 명중 ${log.filter((l) => l.type === 'shotHitCamp').length}`,
+      `상태이상 ${log.filter((l) => l.type === 'status').length} · 코숏 약 해제 ${log.filter((l) => l.type === 'cure' && (l.value ?? 0) > 0).length}`,
       `회피 ${log.filter((l) => l.type === 'evade').length} · 치명타 ${log.filter((l) => l.type === 'crit').length}`,
       '',
       '임시 레벨·기술·패시브·다시냥 방울은 판 종료로 초기화됨',

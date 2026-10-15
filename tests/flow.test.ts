@@ -282,7 +282,7 @@ describe('성장 후보·대체 보상', () => {
 
   test('구출 전 동료와 전투 지원이 없는 동료는 캠프 후보에 없다', () => {
     const b = fresh(3, (s) => { s.rescued = ['kosyot', 'kangkang']; });
-    expect((b as any).availableCampSkills().sort()).toEqual(['barrier', 'capsule', 'laser']);
+    expect((b as any).availableCampSkills().sort()).toEqual(['barrier', 'capsule', 'laser', 'prescription']);
     expect((fresh() as any).availableCampSkills().sort()).toEqual(['barrier', 'laser']);
   });
 

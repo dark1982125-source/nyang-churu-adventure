@@ -5,12 +5,16 @@ import { buildLoadout } from '../../meta/save';
 import { beginRun, recordRunLoot, settleRun } from '../../meta/settlement';
 import { TUNING } from '../../config/tuning';
 import { PASSIVES, ULTIMATES, type PassiveId } from '../../data/skills';
-import { BOSS_PATTERNS } from '../../data/enemies';
+import { MEDICINES, STATUS_NAMES, type MedicineId } from '../../data/medicines';
 import { store } from '../store';
 import { sound } from '../sound';
 import { button, COLORS, FONT, text } from '../ui';
 
 const W = 960;
+/** 코숏 약 임시 색 */
+const MED_COLORS: Record<MedicineId, number> = {
+  antidote: 0x8fd16a, bandage: 0xf3eadb, mintOintment: 0x9ff0e0, hotPack: 0xff7a4d, nyangCas: 0xffd0f0, panacea: 0xffe066,
+};
 const H = 540;
 const GROUND = 430;
 
@@ -61,7 +65,7 @@ export class BattleScene extends Phaser.Scene {
     this.hudTexts.top = text(this, 16, 10, '', 15).setDepth(11);
     this.hudTexts.right = text(this, W - 16, 10, '', 15).setOrigin(1, 0).setDepth(11);
     this.hudTexts.banner = this.add.text(W / 2, 120, '', { fontFamily: FONT, fontSize: '24px', color: '#ffffff', stroke: '#3a2a4a', strokeThickness: 6, align: 'center', wordWrap: { width: 820 } }).setOrigin(0.5).setDepth(12);
-    this.hudTexts.note = text(this, 180, H - 34, '', 11, '#3d3852').setDepth(11);
+    this.hudTexts.note = text(this, 180, H - 50, '', 11, '#3d3852').setDepth(11);
 
     this.makeTouchControls();
     button(this, W / 2 + 60, 38, 90, 26, '나가기', () => this.askQuit(), { size: 12, color: 0x6a4b6c }).setDepth(13);
@@ -255,24 +259,35 @@ export class BattleScene extends Phaser.Scene {
       const hx = sx(h.x);
       if (h.kind === 'shockwave') {
         g.fillStyle(0xd9c27a, 0.9).fillTriangle(hx - h.radius, GROUND, hx + h.radius, GROUND, hx, GROUND - 30);
-      } else {
+      } else if (h.kind === 'bigRock') {
         // 큰 돌: 캠프를 향해 포물선으로 날아온다. 착탄 지점(캠프)에 그림자, 남은 내구도 표시.
         const tx = sx(h.targetX);
         g.fillStyle(0xff4f4f, 0.18 + 0.25 * h.progress).fillEllipse(tx, GROUND - 2, 70, 12);
         g.fillStyle(0x8c8174, 1).fillCircle(hx, sy(h.y), h.radius);
         g.lineStyle(3, 0x5d554b, 1).strokeCircle(hx, sy(h.y), h.radius);
-        this.bar(g, hx - 20, sy(h.y) - h.radius - 10, 40, 5, h.hp / BOSS_PATTERNS.rockThrow.hp, 0xffb36b);
+        this.bar(g, hx - 20, sy(h.y) - h.radius - 10, 40, 5, h.hp / h.maxHp, 0xffb36b);
+      } else {
+        // 캠프 조준 투사체(시험): 조약돌(투척) / 먼지 뭉치(공중 투하). 캠프에 착탄 그림자.
+        const tx = sx(h.targetX);
+        g.fillStyle(0xff4f4f, 0.15 + 0.25 * h.progress).fillEllipse(tx, GROUND - 2, 56, 10);
+        if (h.style === 'drop') g.fillStyle(0x9b8fb0, 1).fillCircle(hx, sy(h.y), h.radius).lineStyle(2, 0x5b4f70, 1).strokeCircle(hx, sy(h.y), h.radius);
+        else g.fillStyle(0xb0a48e, 1).fillCircle(hx, sy(h.y), h.radius).lineStyle(2, 0x6d6355, 1).strokeCircle(hx, sy(h.y), h.radius);
       }
     }
 
     // 드롭
     for (const p of b.pickups) {
       const px = sx(p.x), py = sy(p.y) - 8;
-      const col = { catnip: 0x6fcf6a, gear: 0x9aa0a8, bell: 0xffd34d, key: 0xffe066, capsule: 0xff9cc2, loot: 0xc7a0ff }[p.kind];
+      const col = { catnip: 0x6fcf6a, gear: 0x9aa0a8, bell: 0xffd34d, key: 0xffe066, capsule: 0xff9cc2, loot: 0xc7a0ff, medicine: MED_COLORS[p.medId ?? 'antidote'] }[p.kind];
       if (p.kind === 'gear') g.fillStyle(col, 1).fillCircle(px, py, 6).fillStyle(0x5b5f66, 1).fillCircle(px, py, 2);
       else if (p.kind === 'key') { g.fillStyle(col, 1).fillCircle(px - 6, py, 7).fillRect(px - 2, py - 2, 16, 4); }
       else if (p.kind === 'bell') { g.fillStyle(col, 1).fillCircle(px, py, 9).fillStyle(0x7fe0c9, 1).fillRect(px - 8, py - 11, 16, 3); }
       else if (p.kind === 'capsule') { g.fillStyle(col, 1).fillRoundedRect(px - 10, py - 6, 20, 12, 6); }
+      else if (p.kind === 'medicine') {
+        // 코숏 약(임시 도형): 색 병 + 짧은 이름
+        g.fillStyle(col, 1).fillRoundedRect(px - 8, py - 10, 16, 18, 4).fillStyle(0xffffff, 0.9).fillRect(px - 4, py - 14, 8, 5);
+        this.t(px, py - 24, MEDICINES[p.medId!].name.split(' ').pop()!, 10, '#ffffff');
+      }
       else if (p.kind === 'loot') { g.fillStyle(col, 1).fillRoundedRect(px - 7, py - 7, 14, 14, 4).lineStyle(1, 0xffffff, 0.8).strokeRoundedRect(px - 7, py - 7, 14, 14, 4); }
       else g.fillStyle(col, 1).fillEllipse(px, py, 9, 12);
     }
@@ -283,7 +298,12 @@ export class BattleScene extends Phaser.Scene {
     // 호냥이
     const p = b.player;
     const blink = p.invuln > 0 && Math.floor(b.t * 20) % 2 === 0;
-    if (!blink) this.drawCat(sx(p.x), sy(p.y), 0xf3a65a, 0x2fb9a8, 1, p.attackAnim > 0, 'hero', b.t, p.y > 0);
+    const frozen = b.heroStatus.frozen;
+    if (!blink) this.drawCat(sx(p.x), sy(p.y), frozen ? 0xa8dcff : 0xf3a65a, 0x2fb9a8, 1, p.attackAnim > 0, 'hero', frozen ? 0 : b.t, p.y > 0);
+    if (frozen) g.lineStyle(3, 0xd8f4ff, 0.9).strokeRoundedRect(sx(p.x) - 24, sy(p.y) - 74, 50, 76, 8);
+    // 머리 위 상태이상 표시(태그·남은 시간)
+    const sts = b.heroStatus.effects.map((e) => `${STATUS_NAMES[e.tag]}${e.origin === 'terrain' ? '(지형)' : ''} ${e.remaining.toFixed(1)}`).join(' ');
+    if (sts) this.t(sx(p.x), sy(p.y) - 92, sts, 12, '#e6c6ff');
     if (b.hasBell) this.t(sx(p.x) + 22, sy(p.y) - 66, '🔔', 14, '#ffd34d', false);
 
     // 연출
@@ -295,6 +315,15 @@ export class BattleScene extends Phaser.Scene {
         g.fillStyle(0x000000, 0.25).fillRect(sx(fx.x1), GROUND - 6, fx.x2 - fx.x1, 10);
         if (fx.text) this.t((sx(fx.x1) + sx(fx.x2)) / 2, GROUND - 60, fx.text, 13, '#ffe08a');
       } else if (fx.kind === 'hit') { g.fillStyle(fx.color ?? 0xffffff, a).fillCircle(sx((fx.x1 + fx.x2) / 2), sy((fx.y1 + fx.y2) / 2), (fx.x2 - fx.x1) / 2); }
+      else if (fx.kind === 'aim') {
+        // 캠프 조준선 예고
+        g.lineStyle(2, 0xff5555, 0.4 + 0.5 * a).lineBetween(sx(fx.x2), sy(fx.y2), sx(fx.x1), sy(fx.y1));
+        if (fx.text) this.t(sx(fx.x2), sy(fx.y2) - 30, fx.text, 12, '#ffb0b0');
+      } else if (fx.kind === 'dropMark') {
+        // 공중 투하 낙하 예고: 캠프 위 그림자
+        g.fillStyle(0x5b2b6b, 0.25 + 0.3 * (1 - a)).fillEllipse(sx((fx.x1 + fx.x2) / 2), GROUND - 2, fx.x2 - fx.x1, 14);
+        if (fx.text && a > 0.4) this.t(sx((fx.x1 + fx.x2) / 2), GROUND - 150, fx.text, 12, '#ffb0ff');
+      }
       else if (fx.kind === 'laser') { g.lineStyle(3, 0xff4f8b, a).lineBetween(sx(fx.x1), sy(fx.y1), sx(fx.x2), sy(fx.y2)); }
       else if (fx.kind === 'shield') { g.lineStyle(4, 0xa8f0ff, a).strokeEllipse(sx((fx.x1 + fx.x2) / 2), GROUND - 46, 130, 120); }
       else if (fx.kind === 'ult') { g.fillStyle(0xffffff, 0.35 * a).fillRect(0, 0, W, H); if (fx.text) this.t(W / 2, 200, fx.text, 22, '#ffe08a'); }
@@ -380,6 +409,23 @@ export class BattleScene extends Phaser.Scene {
         if (e.state === 'telegraph') g.lineStyle(2, 0xff5555, 1).strokeCircle(x, y - d.height / 2, d.height / 2 + 6);
         break;
       }
+      case 'pebbleRat':
+        // 시험 적 A: 돌을 든 쥐
+        g.fillStyle(c(0xb59a7e), 1).fillEllipse(x, y - d.height / 2, d.width, d.height);
+        g.fillStyle(0x2b2238, 1).fillCircle(x - d.width * 0.3, y - d.height * 0.55, 2.5);
+        g.fillStyle(0x8c8174, 1).fillCircle(x + 6, y - d.height - (e.state === 'aim' ? 10 : 2), 7);
+        if (e.state === 'aim') g.lineStyle(2, 0xff5555, 1).strokeCircle(x, y - d.height / 2, d.height / 2 + 6);
+        break;
+      case 'dustBat': {
+        // 시험 적 B: 공중 먼지 박쥐
+        const flap = Math.sin((e.id + this.battle.t) * 14) * 8;
+        g.fillStyle(c(0x7b6d93), 1).fillEllipse(x, y - d.height / 2, d.width * 0.6, d.height);
+        g.fillTriangle(x - 4, y - d.height / 2, x - 26, y - d.height / 2 - flap, x - 10, y - 2);
+        g.fillTriangle(x + 4, y - d.height / 2, x + 26, y - d.height / 2 - flap, x + 10, y - 2);
+        g.fillStyle(0xffe0e0, 1).fillCircle(x - 4, y - d.height * 0.6, 2);
+        if (e.state === 'aim') g.lineStyle(2, 0xff66ff, 1).strokeCircle(x, y - d.height / 2, d.height / 2 + 8);
+        break;
+      }
       case 'stompSole': {
         const lift = e.state === 'stomp' ? 18 : 0;
         g.fillStyle(c(0x8f8a84), 1).fillRoundedRect(x - d.width / 2, y - d.height - lift, d.width, d.height, 18);
@@ -389,12 +435,15 @@ export class BattleScene extends Phaser.Scene {
         break;
       }
     }
-    if (e.stun > 0) this.t(x, y - d.height - 22, '기절', 11, '#fff3a0');
+    if (e.cc > 0 && e.ccKind) this.t(x, y - d.height - 22, { sleep: '수면', stun: '기절', freeze: '빙결' }[e.ccKind], 11, '#fff3a0');
+    else if (e.slow > 0) this.t(x, y - d.height - 22, '감속', 11, '#bfe0ff');
+    if (d.temp) this.t(x, y + 12, '시험', 9, '#ffd0a0');
     if (d.rank !== 'normal' || e.hp < d.hp) {
       this.bar(g, x - d.width / 2, y - d.height - 12, d.width, 5, e.hp / d.hp, d.rank === 'boss' ? 0xff6b6b : 0xffb86b);
     }
     if (d.rank !== 'normal') this.t(x, y - d.height - 26, d.name, 12, d.rank === 'boss' ? '#ffb3b3' : '#ffe0b3');
     if (!e.required) this.t(x, y + 10, '분열', 10, '#e0dbff');
+    if (d.flying) g.fillStyle(0x000000, 0.15).fillEllipse(x, GROUND - 2, d.width, 6);
   }
 
   private drawHud(): void {
@@ -410,7 +459,7 @@ export class BattleScene extends Phaser.Scene {
     // 궁극기 게이지(해금 시)
     if (b.loadout.ultimateEnabled) this.bar(h, 404, 32, 140, 14, b.ultGauge / TUNING.ultimate.gaugeMax, 0xffd34d);
 
-    // 일반 구간 목표 카운트와 엘리트/보스 부하 잔여 수를 따로 보여 준다(표시 형식은 미정·TEMP)
+    // 확정: 일반 구간만 '처치 k/목표'. 엘리트·보스 구간의 분열·소환체 잔여 수는 표시하지 않는다(내부 판정만).
     let w: string;
     if (b.mode === 'wave') {
       const rt = b.waves[b.waveIndex];
@@ -419,7 +468,8 @@ export class BattleScene extends Phaser.Scene {
         w = `웨이브 ${b.waveIndex + 1}/3 · 처치 ${np.kills}/${np.target}`;
       } else {
         const boss = b.enemies.find((e) => e.role === 'finale');
-        w = `웨이브 ${b.waveIndex + 1}/3 · ${boss ? `${boss.def.rank === 'boss' ? '보스' : '엘리트'} 전투` : '정리 중'}${b.childrenAlive > 0 ? ` · 부하 ${b.childrenAlive}` : ''}`;
+        const finale = b.chapter.waves[b.waveIndex].finale;
+        w = `웨이브 ${b.waveIndex + 1}/3 · ${boss?.def.rank === 'boss' || finale === 'stompSole' ? '보스' : '엘리트'} 전투`;
       }
     } else {
       w = b.waveIndex >= 3 ? '감옥으로!' : `웨이브 ${b.waveIndex + 1}/3 접근 중`;
@@ -441,7 +491,11 @@ export class BattleScene extends Phaser.Scene {
     const passives = (Object.entries(b.skills.passives) as [PassiveId, number][])
       .filter(([, lv]) => lv > 0).map(([id, lv]) => `${PASSIVES[id].name.replace(' 증가', '').replace(' 감소', '')} ${lv}`).join(' · ');
     const lootKinds = Object.keys(b.loot).filter((k) => k !== 'nyangJelly').length;
+    const st = b.stats();
     this.hudTexts.note.setText(
+      `방어력 ${Math.round(st.defense)} (직접 피해 ×${st.damageTaken.toFixed(2)})` +
+      (b.heroStatus.effects.length ? ` | 상태: ${b.heroStatus.effects.map((e) => `${STATUS_NAMES[e.tag]}(${e.source}) ${e.remaining.toFixed(1)}s`).join(', ')}` : '') +
+      (b.heroStatus.refreezeImmune > 0 ? ` | 재빙결 면역 ${b.heroStatus.refreezeImmune.toFixed(1)}s` : '') + '\n' +
       `기본 Lv.${b.skills.basicLevel} | 전용 ${b.skills.exclusives.length}/3: ${skills || '없음'}\n` +
       `패시브 ${passives ? passives.split(' · ').length : 0}/5: ${passives || '없음'} | 주운 재료 ${lootKinds}종 (판 종료 시 정산)`,
     );

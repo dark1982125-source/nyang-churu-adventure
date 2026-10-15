@@ -120,14 +120,52 @@ export const TUNING = {
     critDamage: 0.2, // 치명타 배율 +0.2/Lv
     maxHp: 15, // +15/Lv, 현재 HP도 같이 증가
     hpRegen: 0.8, // 초당 회복량/Lv (습득 시에만 자연 회복)
-    defense: 0.06, // 받는 피해 -6%/Lv (계산식 미정)
+    /** 방어 포인트/Lv. 공식(100/(100+방어력))은 확정, 포인트는 TEMP */
+    defense: 10,
     evasion: 0.04, // +4%p/Lv
     maxEnergy: 12, // +12/Lv, 현재 기력도 같이 증가
     energyRegen: 0.2, // 기본 회복 속도 +20%/Lv
     luck: 2, // +2/Lv
     pickupRadius: 0.25, // 수집 반경 +25%/Lv
     cooldown: 0.06, // 전용 스킬 쿨타임 -6%/Lv
-    caps: { evasion: 0.4, defense: 0.5, cooldown: 0.5, critChance: 0.6 }, // 미정 상한
+    caps: { evasion: 0.4, cooldown: 0.5, critChance: 0.6 }, // 미정 상한
+  },
+
+  /**
+   * 호냥이 방어력. CONFIRMED: 최종 방어력 = 영구 스탯 + 장비 + 판 임시 보너스,
+   * 직접 피해(접촉·근접·투사체·폭발) × 100/(100+방어력), DOT·위험지형 지속 피해 제외.
+   * 포인트·반올림·음수 방어·다른 감산 순서·캠프 적용은 미정.
+   */
+  defense: {
+    base: 0, // TEMP 영구 기본 방어력
+    perNodeLevel: 5, // TEMP 영구 성장 테스트 노드 1레벨당
+    /** 미정: 음수 방어. 지금은 0 미만을 0으로 본다 */
+    minDefense: 0, // TEMP
+    /** 미정: 반올림. 지금은 반올림하지 않는다(소수 HP 피해 유지) */
+    round: false, // TEMP
+  },
+
+  /**
+   * 상태이상. 중첩 규칙은 확정(같은 DOT는 강한 효과 유지·시간 갱신, 빙결·감속은 강도 중첩 없이 시간 갱신,
+   * 다른 종류는 공존, 빙결 해제 뒤 짧은 재빙결 면역). 수치는 전부 TEMP.
+   */
+  status: {
+    /** 미정: 약한 효과가 다시 걸릴 때 강한 효과를 얼마나 연장할지. 지금은 강한 강도 그대로 시간만 갱신 */
+    weakerRefreshes: true, // TEMP
+    /** 빙결 한 번이 이어질 수 있는 최대 시간(재적용으로 무한히 늘지 않게) */
+    freezeMaxDuration: 2.5, // TEMP
+    /** 빙결 해제(치료·자연 종료) 뒤 재빙결 면역 시간. 시간 미정 */
+    refreezeImmunity: 1.5, // TEMP
+    /** 감속 중 이동 속도 배율 */
+    slowMoveMul: 0.5, // TEMP
+  },
+
+  /** 적 등급별 제어 저항. 적용 방식(일반 정상/엘리트 단축·감소/보스 감속 대체·밀쳐내기 면역)은 확정, 수치 TEMP */
+  enemyCc: {
+    eliteDurationMul: 0.5, // TEMP 엘리트 수면·기절·빙결 시간 배율
+    eliteKnockbackMul: 0.4, // TEMP 엘리트 밀쳐내기 거리 배율
+    bossSlowMul: 0.6, // TEMP 보스: 행동 정지 대신 이 속도 배율의 감속
+    bossSlowDuration: 1.0, // TEMP 보스 감속 대체 시간(원래 시간과 무관한 짧은 감속)
   },
 
   pickups: {
@@ -149,7 +187,21 @@ export const TUNING = {
   supports: {
     barrier: { interval: 12, shield: 25, levelShield: 10, levelInterval: 1 }, // TEMP 수염할아버지 골골송 배리어
     laser: { interval: 3.2, damage: 22, levelDamage: 8, levelInterval: 0.3 }, // TEMP 삐콩이 서치 레이저
-    capsule: { interval: 14, heal: 20, levelHeal: 6, levelInterval: 1.5, lifetime: 9, dropAhead: 170 }, // TEMP 코숏 캣닢 캡슐
+    capsule: { interval: 14, heal: 20, levelHeal: 6, levelInterval: 1.5, lifetime: 9, dropAhead: 100 }, // TEMP 코숏 캣닢 캡슐. 투하 위치는 웨이브 정차 중에도 수집 반경(130) 안
+    /** 코숏 증상별 처방: 판단 주기마다 증상 하나에 맞는 약 한 개 투하 */
+    prescription: { interval: 6, levelInterval: 0.8, retry: 0.5, lifetime: 9, dropAhead: 90 }, // TEMP 빙결로 못 움직여도 반경 안에 떨어지게
+    /**
+     * 미정: 같은 약이 이미 바닥·비행 중일 때. 'nextSymptom' = 다음 증상 약을 처방, 'wait' = 이번 처방을 건너뛴다.
+     * 중복 투하 회피 방향 자체는 확정.
+     */
+    prescriptionOnDuplicate: 'nextSymptom' as 'nextSymptom' | 'wait', // TEMP
+    /** 미정: 초당 피해 동률인 DOT 사이 순서 */
+    dotTieOrder: ['poison', 'burn', 'bleed'] as const, // TEMP
+    /**
+     * 코숏의 만능 처방약(골골기어 영구 진화). 해금 레벨·쿨타임·개별 약 대체/병행은 미정.
+     * 'coexist' = 치료 가능한 증상이 minSymptoms 이상일 때만 만능약, 아니면 개별 약.
+     */
+    panacea: { policy: 'coexist' as 'coexist' | 'replace', minSymptoms: 2, cooldown: 18 }, // TEMP
   },
 
   /**
