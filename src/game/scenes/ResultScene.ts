@@ -1,0 +1,47 @@
+import Phaser from 'phaser';
+import type { LogEntry, RunResult } from '../../sim/battle';
+import type { SettlementSummary } from '../../meta/settlement';
+import { LOOT_NAMES, type LootId } from '../../data/items';
+import { COMPANIONS, type CompanionId } from '../../data/companions';
+import { button, COLORS, text } from '../ui';
+
+/** 판 정산 결과. 정산은 BattleScene에서 판 종료 즉시 저장까지 끝난 상태로 들어온다. */
+export class ResultScene extends Phaser.Scene {
+  constructor() { super('result'); }
+
+  create(data: { result: RunResult; summary: SettlementSummary; log: LogEntry[] }): void {
+    const { result, summary, log } = data;
+    const win = result.outcome === 'victory';
+    this.cameras.main.setBackgroundColor(win ? 0x2d3b4f : 0x3a2533);
+
+    text(this, 40, 30, win ? 'Ch 1 클리어!' : '패배…', 34, win ? '#ffe08a' : '#ffb3b3');
+    const cause = result.defeatCause === 'camp' ? '캠프 멘탈이 바닥났습니다.' : result.defeatCause === 'hero' ? '호냥이가 쓰러졌습니다.' : '';
+    if (!win) text(this, 40, 78, `${cause} 획득한 재화·재료는 보존되고, 새 동료 구출은 확정되지 않았습니다.`, 15, COLORS.dim);
+    if (summary.newlyRescued) {
+      const name = COMPANIONS[summary.newlyRescued as CompanionId].name;
+      text(this, 40, 78, `${name} 정식 합류! 다음 출격부터 캣닢 캡슐 지원과 캠프 선택지가 열립니다.`, 16, '#bff7ff');
+    }
+
+    const lootLines = (Object.entries(result.loot) as [LootId, number][]).filter(([, n]) => n > 0).map(([id, n]) => `${LOOT_NAMES[id]} +${n}`);
+    text(this, 40, 120, '획득 (영구 보존)', 18, '#ffd9a0');
+    text(this, 40, 150, lootLines.length ? lootLines.join('\n') : '없음', 15);
+
+    const passes = log.filter((l) => l.type === 'pass').length;
+    const missed = log.filter((l) => l.type === 'missedPickup').length;
+    const oob = log.filter((l) => l.type === 'outOfBounds').length;
+    text(this, 420, 120, '판 기록', 18, '#ffd9a0');
+    text(this, 420, 150, [
+      `시간 ${result.time.toFixed(0)}초 · 호냥이 Lv.${result.heroLevel}`,
+      `지정 처치 ${result.kills.required}/${result.kills.requiredTotal} · 분열 처치 ${result.kills.children}`,
+      `호냥이를 지나친 적 ${passes} · 화면 밖 이탈 ${oob}`,
+      `놓친 드롭 ${missed}`,
+      '',
+      '임시 레벨·기술·다시냥 방울은 판 종료로 초기화됨',
+      summary.duplicate ? '※ 이미 정산된 판(중복 지급 없음)' : '',
+      summary.firstClear ? '최초 클리어 · 고난도 Ch 1 해금(고난도 미구현)' : '',
+    ].filter(Boolean).join('\n'), 14);
+
+    button(this, 40, 440, 260, 56, '캠프로 돌아가기', () => this.scene.start('camp'), { size: 18, color: 0x5b4f86 });
+    button(this, 320, 440, 200, 56, '바로 재도전', () => this.scene.start('battle'), { size: 18, color: 0xc0623c });
+  }
+}

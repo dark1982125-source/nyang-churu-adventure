@@ -1,0 +1,33 @@
+import { Battle, type InputState } from '../src/sim/battle';
+import { buildLoadout, newSave, type SaveData } from '../src/meta/save';
+
+/** 테스트용 단순 조작 봇: 계속 전진, 충격파가 가까우면 점프, 선택창은 전용 기술 우선. */
+export function botInput(b: Battle): InputState {
+  const p = b.player;
+  const wave = b.hazards.find((h) => h.vx < 0 && h.x > p.x && h.x - p.x < 70 + h.radius);
+  return { forward: true, jump: !!wave, ult: b.ultGauge >= 100 ? 0 : null };
+}
+
+export function botChoose(b: Battle): void {
+  const offers = b.pending[0].offers;
+  let idx = offers.findIndex((o) => o.kind === 'exclusive');
+  if (idx < 0) idx = offers.findIndex((o) => o.kind === 'basic');
+  b.choose(Math.max(0, idx));
+}
+
+export interface BotRun { battle: Battle; minXViolation: boolean }
+
+export function runBot(opts: { save?: SaveData; seed?: number; maxTime?: number; forceBell?: boolean; input?: (b: Battle) => InputState } = {}): BotRun {
+  const save = opts.save ?? newSave();
+  const b = new Battle({ runId: 1, seed: opts.seed ?? 7, loadout: buildLoadout(save), forceBellDrop: opts.forceBell });
+  const dt = 1 / 60;
+  let lastX = b.player.x;
+  let minXViolation = false;
+  while (!b.finished && b.t < (opts.maxTime ?? 600)) {
+    if (b.paused) { botChoose(b); continue; }
+    b.update(dt, (opts.input ?? botInput)(b));
+    if (b.player.x < lastX) minXViolation = true;
+    lastX = b.player.x;
+  }
+  return { battle: b, minXViolation };
+}
