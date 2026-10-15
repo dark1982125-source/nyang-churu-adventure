@@ -7,6 +7,8 @@ import type { WeaponId } from '../data/weapons';
 import { ARMOR_DEFS, type ArmorId } from '../data/armor';
 import { ACCESSORY_DEFS, ACCESSORY_SLOTS, type AccessoryId } from '../data/accessories';
 import { equippedAccessoryStats, equippedArmorStats, equippedWeaponAttackMul } from './forge';
+import { COSTUME_DEFS, type CostumeId } from '../data/costumes';
+import { syncCostumeUnlocks } from './costume';
 
 /**
  * 영구 저장 상태. 판 상태(RunState, sim/battle.ts)와 완전히 분리된다.
@@ -27,12 +29,20 @@ export interface SaveData {
   accessoryBlueprints: AccessoryId[];
   /** 보유 액세서리와 강화 상태. 같은 아이템은 하나만 보유 */
   accessories: Partial<Record<AccessoryId, { level: number; fails: Record<number, number> }>>;
+  /** 코스튬 도안(나비 옷장). 해금 조건은 나비 구출 전에도 기록한다. */
+  costumeBlueprints: CostumeId[];
+  /** 보유 코스튬(한 번 제작하면 영구 보유, 강화·등급 없음) */
+  costumes: CostumeId[];
   /**
    * 장비 슬롯. 보호구 머리·몸통·발 각 1칸(확정). 액세서리는 종류 무관 2칸(확정), 같은 아이템 중복 불가.
-   * 코스튬은 기존 그대로 별도 표시(코스튬 별도칸 정책은 미정).
+   * costume: 착용 코스튬(null = 기본 모습). 외형 전용이라 능력치 계산(buildLoadout)에 쓰지 않는다.
    */
-  equipment: { weapon: WeaponId; head: ArmorId | null; body: ArmorId | null; feet: ArmorId | null; accessories: (AccessoryId | null)[]; costume: string | null };
-  flags: { forgeVisited: boolean };
+  equipment: { weapon: WeaponId; head: ArmorId | null; body: ArmorId | null; feet: ArmorId | null; accessories: (AccessoryId | null)[]; costume: CostumeId | null };
+  /**
+   * nabiFirstTalk: 나비 첫 대화(파자마 도안). pajamaFreeCraftUsed: 파자마 무료 제작 1회 사용.
+   * starThreadGranted: 최종 챕터 최초 클리어 별빛 자수실 3개 지급 완료(중복 지급 방지).
+   */
+  flags: { forgeVisited: boolean; nabiFirstTalk: boolean; pajamaFreeCraftUsed: boolean; starThreadGranted: boolean };
   rescued: CompanionId[];
   /** 일반 난이도 최초 클리어한 챕터 */
   clearedChapters: number[];
@@ -81,8 +91,10 @@ export function newSave(): SaveData {
     armor: {},
     accessoryBlueprints: [],
     accessories: {},
+    costumeBlueprints: [],
+    costumes: [],
     equipment: { weapon: 'starterGlove', head: null, body: null, feet: null, accessories: [null, null], costume: null },
-    flags: { forgeVisited: false },
+    flags: { forgeVisited: false, nabiFirstTalk: false, pajamaFreeCraftUsed: false, starThreadGranted: false },
     rescued: [],
     clearedChapters: [],
     hardUnlocked: [],
@@ -160,7 +172,12 @@ export function loadSave(storage: SaveStorage): SaveData {
     }
     equipment.accessories = accSlots;
     delete (equipment as { accessory?: unknown }).accessory;
-    return {
+    // 코스튬: 알 수 없는 id는 버리고, 보유하지 않은 코스튬을 입고 있으면 기본 모습으로(이전 저장의 문자열 자리 포함)
+    const known = (x: unknown): x is CostumeId => typeof x === 'string' && x in COSTUME_DEFS;
+    const costumeBlueprints = [...new Set((Array.isArray(parsed.costumeBlueprints) ? parsed.costumeBlueprints : []).filter(known))];
+    const costumes = [...new Set((Array.isArray(parsed.costumes) ? parsed.costumes : []).filter(known))];
+    if (!known(equipment.costume) || !costumes.includes(equipment.costume)) equipment.costume = null;
+    const loaded: SaveData = {
       ...base,
       ...parsed,
       currencies: { ...base.currencies, ...parsed.currencies },
@@ -170,12 +187,17 @@ export function loadSave(storage: SaveStorage): SaveData {
       armor,
       accessoryBlueprints: [...(parsed.accessoryBlueprints ?? [])],
       accessories,
+      costumeBlueprints,
+      costumes,
       equipment,
       flags: { ...base.flags, ...parsed.flags },
       stats: { ...base.stats, ...parsed.stats },
       settings: legacySettings({ ...base.settings, ...parsed.settings }),
       version: 1,
     };
+    // 코스튬 추가 전 저장도 이미 채운 조건(Ch 1 클리어·코숏 구출 등)의 도안을 받는다. 진행은 초기화하지 않는다.
+    syncCostumeUnlocks(loaded);
+    return loaded;
   } catch {
     return base;
   }

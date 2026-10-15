@@ -89,6 +89,7 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     loot: [
       { id: 'oldYarn', chance: 0.3, min: 1, max: 1 }, { id: 'nyangJelly', chance: 0.25, min: 1, max: 1 },
       { id: 'fadedBell', chance: 0.2, min: 1, max: 1 }, // 액세서리 재료(위임 배치안, 확률 TEMP)
+      { id: 'freshSprout', chance: 0.12, min: 1, max: 1 }, // 코스튬 재료 싱그러운 새싹(위임 배치안, 확률 TEMP)
     ],
     testStatus: { tag: 'bleed', intensity: 3, duration: 4 },
   },

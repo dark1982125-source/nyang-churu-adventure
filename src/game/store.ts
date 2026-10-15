@@ -1,9 +1,10 @@
 import { loadSave, localStorageAdapter, memoryStorage, newSave, writeSave, type SaveData, type SaveStorage } from '../meta/save';
 import { ACCESSORY_IDS } from '../data/accessories';
 import { recoverInterruptedRun, type SettlementSummary } from '../meta/settlement';
+import { syncCostumeUnlocks } from '../meta/costume';
 
 /**
- * 검토용 미리보기: 주소 끝에 ?preview=forge(#forge)를 붙이면 깡깡이·나비 구출, 액세서리 설계도(TEMP 우회), 재료 보유 상태의 임시 저장으로 시작한다.
+ * 검토용 미리보기: 주소 끝에 ?preview=forge(#forge)를 붙이면 깡깡이·나비 구출, 액세서리 설계도·코스튬 도안 일부(TEMP 우회), 재료 보유 상태의 임시 저장으로 시작한다.
  * Ch 2(깡깡이 구출)가 아직 없어서 대장간을 확인할 다른 방법이 없기 때문이다. 실제 저장과 분리되며 새로고침하면 사라진다.
  */
 const previewMode = (() => {
@@ -32,6 +33,12 @@ function forgePreviewSave(): SaveData {
   // [TEMP 테스트 우회] 나비(Ch 6)와 액세서리 설계도는 정상 진행으로 아직 얻을 수 없어 미리보기 저장에서만 연다
   s.rescued.push('nabi');
   s.accessoryBlueprints = [...ACCESSORY_IDS];
+  // 코스튬: 새싹 도안은 정상 조건(Ch 1 클리어)으로 받는다. 파자마는 옷장 첫 방문 때 정상 흐름(나비 첫 대화)으로 받는다.
+  syncCostumeUnlocks(s);
+  // [TEMP 테스트 우회] 삼색이(Ch 3)·얼룩이(Ch 8) 미구현이라 요리사·탐험가 도안을 미리보기에서만 연다. 별빛 영웅(Ch 15)은 미해금 상태 확인용으로 둔다.
+  s.costumeBlueprints.push('chef', 'explorer');
+  // 새싹·요리사 제작분(제작가능 확인), 탐험가는 일부러 모자라게(재료부족 확인)
+  Object.assign(s.materials, { oldCloth: 10 + 12 + 15, ribbonPiece: 8 + 5, freshSprout: 3, cleanApron: 1, explorerCloth: 1 });
   return s;
 }
 

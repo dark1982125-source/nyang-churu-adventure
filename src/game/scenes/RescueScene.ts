@@ -4,6 +4,8 @@ import { FONT, text } from '../ui';
 import { COMPANIONS } from '../../data/companions';
 import { completePendingClear, pendingClear } from '../../meta/settlement';
 import { sound } from '../sound';
+import { drawHeroSide } from '../costumeArt';
+import { COSTUME_DEFS } from '../../data/costumes';
 
 const W = 960;
 const GROUND = 430;
@@ -85,8 +87,8 @@ export class RescueScene extends Phaser.Scene {
       for (let k = -2; k <= 2; k++) g.lineBetween(JAIL_X + k * 12, GROUND - 74, JAIL_X + k * 12, GROUND - 2);
     }
     // 호냥이(임시 도형)와 열쇠
-    g.fillStyle(0xffb86b, 1).fillRoundedRect(this.heroX - 18, GROUND - 56, 36, 56, 10);
-    g.fillStyle(0x2fb6a8, 1).fillRect(this.heroX - 18, GROUND - 40, 36, 6);
+    const sv = store.save;
+    drawHeroSide(g, this.heroX, GROUND, { look: sv.equipment.costume ? COSTUME_DEFS[sv.equipment.costume].look : null, weapon: sv.equipment.weapon, walk: this.phase === 'walk' ? Math.sin(this.time.now / 70) : 0 });
     g.fillStyle(0xffd34d, 1).fillCircle(this.heroX + 22, GROUND - 64, 7).fillRect(this.heroX + 22, GROUND - 66, 16, 4);
   }
 }

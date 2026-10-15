@@ -108,6 +108,11 @@ export const MATERIAL_NAMES = {
   solarCharm: '태양의부적',
   lunarCharm: '달의부적',
   shootingStarShard: '별똥별 파편',
+  // 코스튬(코스튬-5벌-확정정리.md 재료명 그대로). 낡은 천조각·낡은 털실뭉치·리본조각·헤진 가죽조각은 기존 id 공유.
+  freshSprout: '싱그러운 새싹',
+  cleanApron: '깨끗한 앞치마',
+  explorerCloth: '탐험가의 천조각',
+  starEmbroideryThread: '별빛 자수실',
 } as const;
 
 export type MaterialId = keyof typeof MATERIAL_NAMES;

@@ -9,6 +9,9 @@ import { MEDICINES, STATUS_NAMES, type MedicineId } from '../../data/medicines';
 import { store } from '../store';
 import { sound } from '../sound';
 import { button, COLORS, FONT, text } from '../ui';
+import { drawHeroSide, HERO_FUR } from '../costumeArt';
+import { COSTUME_DEFS, type CostumeLook } from '../../data/costumes';
+import type { WeaponId } from '../../data/weapons';
 
 const W = 960;
 /** 코숏 약 임시 색 */
@@ -38,6 +41,9 @@ export class BattleScene extends Phaser.Scene {
   private clearJournaled = false;
   private hudTexts: Record<string, Phaser.GameObjects.Text> = {};
   private quitConfirm: Phaser.GameObjects.Container | null = null;
+  /** 착용 코스튬(임시 도형). 캠프에서만 바뀌므로 출격 때 한 번 읽는다. 능력치와 무관. */
+  private costumeLook: CostumeLook | null = null;
+  private weaponId: WeaponId = 'starterGlove';
 
   constructor() { super('battle'); }
 
@@ -48,6 +54,8 @@ export class BattleScene extends Phaser.Scene {
     store.persist();
     this.quitConfirm = null;
     this.battle = new Battle({ runId, seed: (Date.now() ^ (runId * 2654435761)) >>> 0, loadout: buildLoadout(save) });
+    this.costumeLook = save.equipment.costume ? COSTUME_DEFS[save.equipment.costume].look : null;
+    this.weaponId = save.equipment.weapon;
     this.settled = false;
     this.clearJournaled = false;
     this.logCursor = 0;
@@ -307,7 +315,12 @@ export class BattleScene extends Phaser.Scene {
     const p = b.player;
     const blink = p.invuln > 0 && Math.floor(b.t * 20) % 2 === 0;
     const frozen = b.heroStatus.frozen;
-    if (!blink) this.drawCat(sx(p.x), sy(p.y), frozen ? 0xa8dcff : 0xf3a65a, 0x2fb9a8, 1, p.attackAnim > 0, 'hero', frozen ? 0 : b.t, p.y > 0);
+    if (!blink) {
+      drawHeroSide(this.g, sx(p.x), sy(p.y), {
+        look: this.costumeLook, weapon: this.weaponId, punching: p.attackAnim > 0,
+        walk: frozen || p.y > 0 ? 0 : Math.sin(b.t * 14), fur: frozen ? 0xa8dcff : HERO_FUR,
+      });
+    }
     if (frozen) g.lineStyle(3, 0xd8f4ff, 0.9).strokeRoundedRect(sx(p.x) - 24, sy(p.y) - 74, 50, 76, 8);
     // 머리 위 상태이상 표시(태그·남은 시간)
     const sts = b.heroStatus.effects.map((e) => `${STATUS_NAMES[e.tag]}${e.origin === 'terrain' ? '(지형)' : ''} ${e.remaining.toFixed(1)}`).join(' ');

@@ -13,21 +13,40 @@ import { accessoryEnhanceInfo, canCraftAccessory, craftAccessory, enhanceAccesso
 import { ACCESSORY_DEFS, ACCESSORY_IDS, ACCESSORY_STAT_NAMES, accessoryValueAt, type AccessoryStatKey } from '../../data/accessories';
 import { CRAFTABLE_WEAPONS, ENHANCE_RULES, GEAR_SLOT_NAMES, WEAPON_DEFS, enhanceAttackBonus, weaponGrade, type MaterialCount, type WeaponId } from '../../data/weapons';
 import { sound } from '../sound';
+import { COSTUME_DEFS, COSTUME_IDS, unlockText, type CostumeId } from '../../data/costumes';
+import { canCraftCostume, costumeState, craftCostume, equipCostume, talkToNabi, type CostumeState } from '../../meta/costume';
+import { drawHeroFront, drawHeroSide } from '../costumeArt';
+import sproutRef from '../../assets/costume-ref/sprout-front.png';
+import chefRef from '../../assets/costume-ref/chef-front.png';
+import pajamasRef from '../../assets/costume-ref/pajamas-front.png';
+import explorerRef from '../../assets/costume-ref/explorer-front.png';
+import starlightRef from '../../assets/costume-ref/starlight-front.png';
 
-type Tab = 'main' | 'growth' | 'ult' | 'gear' | 'forge' | 'armor' | 'workshop' | 'settings';
+type Tab = 'main' | 'growth' | 'ult' | 'gear' | 'forge' | 'armor' | 'workshop' | 'wardrobe' | 'settings';
+
+/** 승인 시안 정면 부분을 줄인 참고 이미지(옷장 미리보기 전용, 전투에는 쓰지 않음) */
+const COSTUME_REFS: Record<CostumeId, string> = { sprout: sproutRef, chef: chefRef, pajamas: pajamasRef, explorer: explorerRef, starlight: starlightRef };
+const STATE_COLORS: Record<CostumeState, string> = { 미해금: '#8a83a0', 제작가능: '#9ff0b0', 재료부족: '#ffb3b3', 보유: '#bff7ff', 착용중: '#ffd166' };
 
 /** 캠프(출격 준비) 화면. 정면 UI 허용 구역. 배치는 검토용. */
 export class CampScene extends Phaser.Scene {
   private tab: Tab = 'main';
   private confirmReset = false;
   private forgeMsg = '';
+  /** 옷장에서 미리보기로 고른 코스튬(null = 기본 모습) */
+  private wardrobeSel: CostumeId | null | undefined;
 
   constructor() { super('camp'); }
 
-  init(data: { tab?: Tab; msg?: string }): void {
+  init(data: { tab?: Tab; msg?: string; sel?: CostumeId | null }): void {
     this.tab = data.tab ?? 'main';
     this.confirmReset = false;
     this.forgeMsg = data.msg ?? '';
+    this.wardrobeSel = data.sel;
+  }
+
+  preload(): void {
+    for (const id of COSTUME_IDS) if (!this.textures.exists(`costumeRef-${id}`)) this.load.image(`costumeRef-${id}`, COSTUME_REFS[id]);
   }
 
   create(): void {
@@ -39,7 +58,7 @@ export class CampScene extends Phaser.Scene {
 
     text(this, 24, 16, '냥냥 츄르 대모험 · 이동 캠프', 26, '#ffd9a0');
     text(this, 24, 52, store.preview
-      ? '[미리보기 전용 저장·TEMP 우회] 깡깡이·나비 구출, 액세서리 설계도·재료 보유 상태입니다. 실제 저장과 분리, 새로고침하면 사라집니다.'
+      ? '[미리보기 전용 저장·TEMP 우회] 깡깡이·나비 구출, 액세서리 설계도·요리사/탐험가 도안·재료 보유 상태입니다. 실제 저장과 분리, 새로고침하면 사라집니다.'
       : '임시 표시물 빌드 — 아트·음악은 아직 제공되지 않아 도형·합성음으로 대신합니다.', 13, store.preview ? COLORS.warn : COLORS.dim);
 
     if (store.recovered?.applied && this.tab === 'main') {
@@ -54,7 +73,7 @@ export class CampScene extends Phaser.Scene {
     const tabs: [Tab, string][] = [['main', '출격'], ['growth', '영구 성장'], ['ult', '궁극기'], ['gear', '장비']];
     if (forgeUnlocked(s)) tabs.push(['forge', '대장간'], ['armor', '보호구']);
     // 나비 공방(액세서리)은 나비 구출 후에만 탭이 보인다
-    if (workshopUnlocked(s)) tabs.push(['workshop', '나비 공방']);
+    if (workshopUnlocked(s)) tabs.push(['workshop', '나비 공방'], ['wardrobe', '나비 옷장']);
     tabs.push(['settings', '설정']);
     const tw = Math.min(122, Math.floor((912 - (tabs.length - 1) * 8) / tabs.length));
     tabs.forEach(([t, label], i) => {
@@ -68,6 +87,7 @@ export class CampScene extends Phaser.Scene {
     else if (this.tab === 'forge' && forgeUnlocked(s)) this.drawForge();
     else if (this.tab === 'armor' && forgeUnlocked(s)) this.drawArmor();
     else if (this.tab === 'workshop' && workshopUnlocked(s)) this.drawWorkshop();
+    else if (this.tab === 'wardrobe' && workshopUnlocked(s)) this.drawWardrobe();
     else this.drawSettings();
   }
 
@@ -193,7 +213,7 @@ export class CampScene extends Phaser.Scene {
       [GEAR_SLOT_NAMES.body, armorName(s.equipment.body), !!s.equipment.body],
       [GEAR_SLOT_NAMES.feet, armorName(s.equipment.feet), !!s.equipment.feet],
       ...s.equipment.accessories.map((id, i): [string, string, boolean] => [`${GEAR_SLOT_NAMES.accessory} ${i + 1}`, id ? `${ACCESSORY_DEFS[id].name} +${s.accessories[id]?.level ?? 0}` : '비어 있음', !!id]),
-      ['코스튬(별도)', s.equipment.costume ?? '비어 있음', false],
+      ['코스튬(외형 전용)', s.equipment.costume ? COSTUME_DEFS[s.equipment.costume].name : '기본 모습', !!s.equipment.costume],
     ];
     slots.forEach(([name, v, on], i) => {
       const y = 182 + i * 36;
@@ -278,6 +298,85 @@ export class CampScene extends Phaser.Scene {
         }, { size: 12, enabled: here || at < 0, color: here ? 0x4f7a5b : COLORS.panelLight });
       });
     });
+  }
+
+  /**
+   * 나비 옷장: 외형 전용 한 벌 코스튬 5종. 도안 조건·재료 표시, 제작(100% 성공·냥젤리 없음), 보유품 선택 → 정면 미리보기 → 착용,
+   * '기본 모습'으로 해제. 캠프에서만 바꾼다. 실제 아트가 없어 참고 시안과 임시 도형 표현을 나눠 보여 준다.
+   */
+  private drawWardrobe(): void {
+    const s = store.save;
+    // 나비 첫 대화: 파자마 도안 + 무료 제작 1회(한 번만)
+    if (talkToNabi(s).first) {
+      store.persist();
+      sound.play('levelUp');
+      this.forgeMsg = '나비: "와 줘서 고마워! 포근 파자마 도안을 줄게. 첫 벌은 재료 없이 만들어 줄게!" (파자마 도안 + 무료 제작 1회)';
+    }
+    const sel = this.wardrobeSel !== undefined ? this.wardrobeSel : s.equipment.costume;
+    text(this, 24, 160, this.forgeMsg || '외형 전용·능력치 변화 없음 · 한 벌 단위 · 캠프에서만 변경 · 보호구 능력은 그대로, 무기는 실제 장비로 표시', 11, this.forgeMsg ? '#bff7ff' : COLORS.dim);
+
+    const rows: (CostumeId | null)[] = [null, ...COSTUME_IDS];
+    rows.forEach((id, i) => {
+      const y = 178 + i * 59;
+      const picked = sel === id;
+      this.add.rectangle(24, y, 520, 55, picked ? 0x3d3958 : COLORS.panel).setOrigin(0).setStrokeStyle(2, 0xffd166, picked ? 0.8 : 0);
+      if (id === null) {
+        const on = s.equipment.costume === null;
+        text(this, 34, y + 6, `기본 모습${on ? '  [착용중]' : ''}`, 15, on ? '#ffd166' : COLORS.text);
+        text(this, 34, y + 30, '코스튬 해제(호냥이 원래 모습)', 11, COLORS.dim);
+        button(this, 446, y + 12, 88, 30, '미리보기', () => this.scene.restart({ tab: 'wardrobe', sel: null }), { size: 12 });
+        return;
+      }
+      const d = COSTUME_DEFS[id];
+      const st = costumeState(s, id);
+      text(this, 34, y + 4, d.name, 15, st === '미해금' ? COLORS.dim : COLORS.text);
+      text(this, 200, y + 6, `[${st}]`, 12, STATE_COLORS[st]);
+      const need = d.craft.length ? this.matLine(d.craft) : s.flags.pajamaFreeCraftUsed ? '무료 제작 사용함' : '재료 없음 · 무료 제작 1회';
+      const sub = st === '보유' || st === '착용중' ? d.lookText : `도안: ${unlockText(d.unlock)} · ${need}`;
+      text(this, 34, y + 26, sub, 11, COLORS.dim).setWordWrapWidth(400);
+      if (st === '보유' || st === '착용중') {
+        button(this, 446, y + 12, 88, 30, '미리보기', () => this.scene.restart({ tab: 'wardrobe', sel: id }), { size: 12 });
+      } else if (st !== '미해금') {
+        button(this, 446, y + 12, 88, 30, '제작', () => {
+          const r = craftCostume(s, id);
+          if (r === 'ok') { store.persist(); sound.play('levelUp'); }
+          this.scene.restart({ tab: 'wardrobe', sel: r === 'ok' ? id : sel, msg: r === 'ok' ? `${d.name} 제작 완료! (100% 성공 · 영구 보유)` : '' });
+        }, { size: 12, enabled: canCraftCostume(s, id) === 'ok' });
+      }
+    });
+
+    // 오른쪽: 정면 미리보기. 참고 시안과 임시 게임 표현을 확실히 나눈다.
+    const px = 556;
+    this.add.rectangle(px, 178, 380, 354, COLORS.panel).setOrigin(0);
+    const look = sel ? COSTUME_DEFS[sel].look : null;
+    text(this, px + 10, 184, sel ? COSTUME_DEFS[sel].name : '기본 모습', 16, '#ffd9a0');
+    text(this, px + 10, 206, '외형 전용 · 능력치 변화 없음', 12, '#9ff0b0');
+    // 참고 시안(정면 부분, 원본 시트를 줄인 것)
+    this.add.rectangle(px + 10, 226, 160, 226, 0x15131f).setOrigin(0).setStrokeStyle(1, 0xffffff, 0.25);
+    if (sel) {
+      this.add.image(px + 90, 339, `costumeRef-${sel}`).setDisplaySize(150, 214);
+    } else {
+      text(this, px + 26, 320, '기본 모습은\n참고 시안 없음', 12, COLORS.dim);
+    }
+    text(this, px + 10, 456, '참고 시안\n(게임 스프라이트 아님)', 11, COLORS.warn);
+    // 임시 게임 표현(도형): 정면 + 전투 측면
+    this.add.rectangle(px + 180, 226, 190, 226, 0x223a4a).setOrigin(0).setStrokeStyle(1, 0xffffff, 0.25);
+    const g = this.add.graphics();
+    g.fillStyle(0x6b8f4e, 1).fillRect(px + 181, 410, 188, 41);
+    drawHeroFront(g, px + 240, 412, { look, weapon: s.equipment.weapon, scale: 1.25 });
+    drawHeroSide(g, px + 330, 412, { look, weapon: s.equipment.weapon, scale: 0.8 });
+    text(this, px + 216, 232, '정면', 11, COLORS.dim);
+    text(this, px + 312, 232, '전투(측면)', 11, COLORS.dim);
+    text(this, px + 180, 456, '임시 표현(도형)\n실제 아트 전달 전', 11, COLORS.warn);
+
+    const on = s.equipment.costume === sel;
+    const owned = sel === null || s.costumes.includes(sel);
+    button(this, px + 10, 494, 360, 32, on ? (sel ? '착용중' : '기본 모습 착용중') : sel ? '이 코스튬 착용' : '기본 모습으로 해제', () => {
+      if (equipCostume(s, sel) !== 'ok') return;
+      store.persist();
+      sound.play('pickup');
+      this.scene.restart({ tab: 'wardrobe', sel, msg: sel ? `${COSTUME_DEFS[sel].name} 착용! 다음 출격부터 이 모습으로 나갑니다.` : '기본 모습으로 돌아왔어요.' });
+    }, { size: 14, enabled: !on && owned, color: on ? 0x4f7a5b : 0xc0623c });
   }
 
   private statLine(st: ArmorStats): string {

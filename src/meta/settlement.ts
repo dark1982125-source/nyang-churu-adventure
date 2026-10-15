@@ -5,6 +5,8 @@ import type { CompanionId } from '../data/companions';
 import { firstClearArmorBlueprints, firstClearBlueprints, specialClearRewards } from './forge';
 import type { RunResult } from '../sim/battle';
 import type { ActiveRun, SaveData } from './save';
+import { syncCostumeUnlocks } from './costume';
+import type { CostumeId } from '../data/costumes';
 
 export interface SettlementSummary {
   applied: boolean;
@@ -16,6 +18,10 @@ export interface SettlementSummary {
   blueprints: WeaponId[];
   armorBlueprints: ArmorId[];
   specials: MaterialId[];
+  /** 이번 정산으로 새로 기록된 코스튬 도안(나비 구출 전에도 기록) */
+  costumeBlueprints: CostumeId[];
+  /** 최종 챕터 최초 클리어 별빛 자수실(1회) */
+  starThread: number;
 }
 
 const MAX_SETTLED_IDS = 50;
@@ -27,7 +33,7 @@ const MAX_SETTLED_IDS = 50;
  * - 판 안 임시 레벨·기술·다시냥 방울은 Battle 객체와 함께 버려진다(저장에 없음)
  */
 export function settleRun(save: SaveData, result: RunResult): SettlementSummary {
-  const summary: SettlementSummary = { applied: false, duplicate: false, newlyRescued: null, firstClear: false, loot: result.loot, blueprints: [], armorBlueprints: [], specials: [] };
+  const summary: SettlementSummary = { applied: false, duplicate: false, newlyRescued: null, firstClear: false, loot: result.loot, blueprints: [], armorBlueprints: [], specials: [], costumeBlueprints: [], starThread: 0 };
   if (save.settledRunIds.includes(result.runId)) {
     summary.duplicate = true;
     if (save.activeRun?.runId === result.runId) save.activeRun = null;
@@ -65,6 +71,10 @@ export function settleRun(save: SaveData, result: RunResult): SettlementSummary 
     }
     // 챕터 일반 완료 시 해당 고난도 해금(고난도 자체는 미구현)
     if (!save.hardUnlocked.includes(result.chapterId)) save.hardUnlocked.push(result.chapterId);
+    // 코스튬 도안(구출·최초 클리어 조건)과 최종 챕터 최초 클리어 별빛 자수실. 같은 정산 쓰기에 묶어 중복이 없다.
+    const costume = syncCostumeUnlocks(save);
+    summary.costumeBlueprints = costume.blueprints;
+    summary.starThread = costume.starThread;
   } else if (result.defeatCause === 'quit') {
     save.stats.quits++;
   } else {
