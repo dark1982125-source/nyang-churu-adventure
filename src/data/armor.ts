@@ -176,6 +176,18 @@ export const ARMOR_MATERIAL_SOURCES: Partial<Record<MaterialId, MaterialSource[]
     { chapter: 5, enemy: '블록 병사', implemented: false },
     { chapter: 'late', enemy: '갑옷병(계열)', family: true, implemented: false },
   ],
+  wornLeather: [
+    // 확인서 수급안(생물 계열). 가시등 멧돼지는 확인서 기재명이며 기존 15챕터 적 목록에는 없어 데이터로만 둔다.
+    { chapter: 1, enemy: '운석 쥐', implemented: true },
+    { chapter: 3, enemy: '가시등 멧돼지', implemented: false },
+    { chapter: 8, enemy: '서리 늑대', implemented: false },
+  ],
+  tornRubber: [
+    // 기존 승인 획득처 유지
+    { chapter: 5, enemy: '블록 병사', implemented: false },
+    { chapter: 5, enemy: '장난감 드론', implemented: false },
+    { chapter: 5, enemy: '불량 뽑기기계', implemented: false },
+  ],
   stickySlimeGlue: [
     { chapter: 1, enemy: '먼지 슬라임', implemented: true },
     { chapter: 2, enemy: '젤리 방울', implemented: false },

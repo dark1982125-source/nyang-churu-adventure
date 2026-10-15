@@ -5,7 +5,8 @@ import { NODE_BY_ID } from '../data/progression';
 import { TUNING, type AdvanceMode, type PassPolicy } from '../config/tuning';
 import type { WeaponId } from '../data/weapons';
 import { ARMOR_DEFS, type ArmorId } from '../data/armor';
-import { equippedArmorStats, equippedWeaponAttackMul } from './forge';
+import { ACCESSORY_DEFS, ACCESSORY_SLOTS, type AccessoryId } from '../data/accessories';
+import { equippedAccessoryStats, equippedArmorStats, equippedWeaponAttackMul } from './forge';
 
 /**
  * 영구 저장 상태. 판 상태(RunState, sim/battle.ts)와 완전히 분리된다.
@@ -22,11 +23,15 @@ export interface SaveData {
   armorBlueprints: ArmorId[];
   /** 보유 보호구와 강화 상태(무기와 같은 구조) */
   armor: Partial<Record<ArmorId, { level: number; fails: Record<number, number> }>>;
+  /** 액세서리 설계도(나비). 시점 미정이라 정상 진행에서는 생기지 않는다. */
+  accessoryBlueprints: AccessoryId[];
+  /** 보유 액세서리와 강화 상태. 같은 아이템은 하나만 보유 */
+  accessories: Partial<Record<AccessoryId, { level: number; fails: Record<number, number> }>>;
   /**
-   * 장비 슬롯. 보호구 머리·몸통·발 각 1칸(확정). 액세서리 1칸은 나비 제작 미구현이라 비어 있다
-   * (액세서리 2칸·중복 금지·코스튬 별도칸 제안은 미승인이라 넣지 않음). 코스튬은 기존 그대로 별도 표시.
+   * 장비 슬롯. 보호구 머리·몸통·발 각 1칸(확정). 액세서리는 종류 무관 2칸(확정), 같은 아이템 중복 불가.
+   * 코스튬은 기존 그대로 별도 표시(코스튬 별도칸 정책은 미정).
    */
-  equipment: { weapon: WeaponId; head: ArmorId | null; body: ArmorId | null; feet: ArmorId | null; accessory: string | null; costume: string | null };
+  equipment: { weapon: WeaponId; head: ArmorId | null; body: ArmorId | null; feet: ArmorId | null; accessories: (AccessoryId | null)[]; costume: string | null };
   flags: { forgeVisited: boolean };
   rescued: CompanionId[];
   /** 일반 난이도 최초 클리어한 챕터 */
@@ -74,7 +79,9 @@ export function newSave(): SaveData {
     weapons: { starterGlove: { level: 0, fails: {} } },
     armorBlueprints: [],
     armor: {},
-    equipment: { weapon: 'starterGlove', head: null, body: null, feet: null, accessory: null, costume: null },
+    accessoryBlueprints: [],
+    accessories: {},
+    equipment: { weapon: 'starterGlove', head: null, body: null, feet: null, accessories: [null, null], costume: null },
     flags: { forgeVisited: false },
     rescued: [],
     clearedChapters: [],
@@ -143,6 +150,16 @@ export function loadSave(storage: SaveStorage): SaveData {
       const id = equipment[slot] as ArmorId | null;
       if (id && (!ARMOR_DEFS[id] || ARMOR_DEFS[id].slot !== slot || !armor[id])) equipment[slot] = null;
     }
+    // 액세서리: 항상 2칸, 보유하지 않은·알 수 없는·같은 아이템 중복은 비운다(이전 저장의 accessory 1칸 자리는 버림)
+    const accessories = { ...parsed.accessories };
+    const accSlots: (AccessoryId | null)[] = [];
+    const src = Array.isArray(equipment.accessories) ? equipment.accessories : [];
+    for (let i = 0; i < ACCESSORY_SLOTS; i++) {
+      const id = src[i] ?? null;
+      accSlots.push(id && ACCESSORY_DEFS[id] && accessories[id] && !accSlots.includes(id) ? id : null);
+    }
+    equipment.accessories = accSlots;
+    delete (equipment as { accessory?: unknown }).accessory;
     return {
       ...base,
       ...parsed,
@@ -151,6 +168,8 @@ export function loadSave(storage: SaveStorage): SaveData {
       weapons: { ...base.weapons, ...parsed.weapons },
       armorBlueprints: [...(parsed.armorBlueprints ?? [])],
       armor,
+      accessoryBlueprints: [...(parsed.accessoryBlueprints ?? [])],
+      accessories,
       equipment,
       flags: { ...base.flags, ...parsed.flags },
       stats: { ...base.stats, ...parsed.stats },
@@ -230,6 +249,11 @@ export interface Loadout {
    * 회피는 판 안 회피와 합쳐 상한 적용, 저항은 상태이상 시간·밀쳐내기·치명타(미정 옵션)에 쓴다.
    */
   armor: { maxHp: number; evasion: number; resist: { bleed: number; burn: number; freeze: number; slow: number; stun: number; knockback: number; critDamage: number } };
+  /**
+   * 착용 액세서리 효과(출격 순간 한 번 계산). 최대 체력·방어·행운은 위 maxHp·defense·baseLuck에 이미 합산,
+   * 나머지는 판 안 패시브와 합친 뒤 상한(TEMP)을 적용한다.
+   */
+  accessory: { attack: number; critChance: number; critDamage: number; attackSpeed: number; cooldown: number; regenInterval: number; energyRegen: number };
 }
 
 /** 장착 보호구의 방어 포인트 합(수치 TEMP). 영구 + 장비 + 판 임시 중 '장비' 몫. */
@@ -243,10 +267,11 @@ export function equipmentDefense(save: SaveData): number {
  */
 export function buildLoadout(save: SaveData): Loadout {
   const armor = equippedArmorStats(save).total;
+  const acc = equippedAccessoryStats(save);
   return {
-    maxHp: TUNING.player.maxHp + nodeLevel(save, 'hp') * 10 + armor.maxHp,
+    maxHp: TUNING.player.maxHp + nodeLevel(save, 'hp') * 10 + armor.maxHp + acc.maxHp,
     damageMul: 1 + nodeLevel(save, 'atk') * 0.06,
-    baseLuck: TUNING.player.baseLuck + nodeLevel(save, 'luck'),
+    baseLuck: TUNING.player.baseLuck + nodeLevel(save, 'luck') + acc.luck,
     campMaxMental: TUNING.camp.maxMental + nodeLevel(save, 'campMental') * 15,
     ultimateEnabled: nodeLevel(save, 'ultSlot') > 0,
     ultimates: [...save.equippedUltimates].slice(0, TUNING.ultimate.maxEquipped),
@@ -255,7 +280,7 @@ export function buildLoadout(save: SaveData): Loadout {
     passPolicy: save.settings.passPolicy,
     weapon: save.equipment.weapon,
     weaponAttackMul: equippedWeaponAttackMul(save),
-    defense: TUNING.defense.base + nodeLevel(save, 'def') * TUNING.defense.perNodeLevel + equipmentDefense(save),
+    defense: TUNING.defense.base + nodeLevel(save, 'def') * TUNING.defense.perNodeLevel + equipmentDefense(save) + acc.defense,
     panacea: nodeLevel(save, 'panacea') > 0,
     campThreatTest: save.settings.campThreatTest,
     statusTest: save.settings.statusTest,
@@ -263,6 +288,10 @@ export function buildLoadout(save: SaveData): Loadout {
       maxHp: armor.maxHp,
       evasion: armor.evasion,
       resist: { bleed: armor.bleed, burn: armor.burn, freeze: armor.freeze, slow: armor.slow, stun: armor.stun, knockback: armor.knockback, critDamage: armor.critDamage },
+    },
+    accessory: {
+      attack: acc.attack, critChance: acc.critChance, critDamage: acc.critDamage, attackSpeed: acc.attackSpeed,
+      cooldown: acc.cooldown, regenInterval: acc.regenInterval, energyRegen: acc.energyRegen,
     },
   };
 }

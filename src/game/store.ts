@@ -1,8 +1,9 @@
 import { loadSave, localStorageAdapter, memoryStorage, newSave, writeSave, type SaveData, type SaveStorage } from '../meta/save';
+import { ACCESSORY_IDS } from '../data/accessories';
 import { recoverInterruptedRun, type SettlementSummary } from '../meta/settlement';
 
 /**
- * 검토용 미리보기: 주소 끝에 ?preview=forge 를 붙이면 깡깡이 구출·재료 보유 상태의 임시 저장으로 시작한다.
+ * 검토용 미리보기: 주소 끝에 ?preview=forge(#forge)를 붙이면 깡깡이·나비 구출, 액세서리 설계도(TEMP 우회), 재료 보유 상태의 임시 저장으로 시작한다.
  * Ch 2(깡깡이 구출)가 아직 없어서 대장간을 확인할 다른 방법이 없기 때문이다. 실제 저장과 분리되며 새로고침하면 사라진다.
  */
 const previewMode = (() => {
@@ -24,7 +25,13 @@ function forgePreviewSave(): SaveData {
     fishboneShard: 10, smallStone: 5, smoothStone: 40,
     // 보호구 확인용: 누빔모자·누빔조끼 제작분 + 강화재 + 유니크 특별 재료
     oldCloth: 10, fluffyMarshmallow: 20, oldSweater: 15, cloudCottonCandy: 120, cozyBlanketPiece: 1, angoraSweater: 1,
+    // 액세서리 확인용(TEMP 테스트 우회): 햇살 목걸이·반지, 달빛 반지·부적 제작분 + 강화재 + 유니크 특별 재료
+    fadedBell: 7, fragrantCatnip: 5, ribbonPiece: 8, smallLink: 3, oldSilverRing: 6, stickySlimeGlue: 2, oldCharmPiece: 5,
+    sunDust: 80, moonDew: 80, flowerKnot: 1, auroraPearl: 1,
   };
+  // [TEMP 테스트 우회] 나비(Ch 6)와 액세서리 설계도는 정상 진행으로 아직 얻을 수 없어 미리보기 저장에서만 연다
+  s.rescued.push('nabi');
+  s.accessoryBlueprints = [...ACCESSORY_IDS];
   return s;
 }
 

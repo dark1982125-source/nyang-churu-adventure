@@ -321,21 +321,28 @@ export class Battle {
     const lv = (id: PassiveId) => this.passiveLevel(id);
     const B = TUNING.basicAttack;
     const basicBase = Math.max(0.2, B.interval - B.intervalPerLevel * (this.skills.basicLevel - 1));
+    // 액세서리(출격 시 계산)는 판 안 패시브와 합친 뒤 상한(TEMP) 적용. 세트 보너스 없음.
+    const A = this.loadout.accessory;
+    const AC = TUNING.accessory.caps;
+    const regenInterval = Math.min(AC.regenInterval, A.regenInterval);
+    const passiveRegen = P.hpRegen * lv('hpRegen');
+    // 회복 개시 조건 미정: 기본은 회복 패시브가 있어야 회복, 브로치는 회복 간격만 단축(같은 양을 더 짧은 간격으로)
+    const baseRegen = passiveRegen > 0 ? passiveRegen : (TUNING.undecided.broochSoloRegen && A.regenInterval > 0 ? TUNING.undecided.soloRegen : 0);
     return {
-      attackMul: this.loadout.damageMul * this.loadout.weaponAttackMul * (1 + P.attack * lv('attack')),
+      attackMul: this.loadout.damageMul * this.loadout.weaponAttackMul * (1 + P.attack * lv('attack') + A.attack),
       skillDamageMul: 1 + P.skillDamage * lv('skillDamage'),
-      basicInterval: basicBase * (1 - P.attackSpeed * lv('attackSpeed')),
-      critChance: Math.min(P.caps.critChance, TUNING.player.baseCritChance + P.critChance * lv('critChance')),
-      critMultiplier: TUNING.player.baseCritMultiplier + P.critDamage * lv('critDamage'),
-      hpRegen: P.hpRegen * lv('hpRegen'),
+      basicInterval: basicBase * (1 - Math.min(AC.attackSpeed, P.attackSpeed * lv('attackSpeed') + A.attackSpeed)),
+      critChance: Math.min(P.caps.critChance, TUNING.player.baseCritChance + P.critChance * lv('critChance') + A.critChance),
+      critMultiplier: TUNING.player.baseCritMultiplier + P.critDamage * lv('critDamage') + A.critDamage,
+      hpRegen: baseRegen / (1 - regenInterval),
       defense: this.totalDefense(),
       damageTaken: 100 / (100 + this.totalDefense()),
       // 보호구 회피(스니커)와 판 안 회피 패시브를 합쳐 상한(미정, TEMP) 적용
       evasion: Math.min(P.caps.evasion, this.loadout.armor.evasion + P.evasion * lv('evasion')),
-      energyRegen: TUNING.player.energyRegen * (1 + P.energyRegen * lv('energyRegen')),
+      energyRegen: TUNING.player.energyRegen * (1 + Math.min(AC.energyRegen, P.energyRegen * lv('energyRegen') + A.energyRegen)),
       luck: this.loadout.baseLuck + P.luck * lv('luck'),
       pickupRadius: TUNING.pickups.magnetRadius * (1 + P.pickupRadius * lv('pickupRadius')),
-      cooldownMul: 1 - Math.min(P.caps.cooldown, P.cooldown * lv('cooldown')),
+      cooldownMul: 1 - Math.min(P.caps.cooldown, P.cooldown * lv('cooldown') + A.cooldown),
     };
   }
 

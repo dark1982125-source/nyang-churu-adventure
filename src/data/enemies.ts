@@ -78,6 +78,7 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
       { id: 'softJelly', chance: 0.35, min: 1, max: 1 }, { id: 'nyangJelly', chance: 0.25, min: 1, max: 1 },
       // 보호구 재료(위임 배치 승인, 확률 TEMP): 폭신 마시멜로·끈끈 슬라임풀
       { id: 'fluffyMarshmallow', chance: 0.3, min: 1, max: 1 }, { id: 'stickySlimeGlue', chance: 0.12, min: 1, max: 1 },
+      { id: 'fadedBead', chance: 0.15, min: 1, max: 1 }, // 액세서리 재료(위임 배치안, 확률 TEMP)
     ],
     testStatus: { tag: 'slow', intensity: 0.4, duration: 3 },
   },
@@ -85,7 +86,10 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     kind: 'spikyBug', name: '삐죽 풀벌레', rank: 'normal',
     hp: 18, speed: 72, width: 30, height: 22, contactDamage: 5, contactInterval: 0.8,
     catnip: 1, gearChance: 0.35,
-    loot: [{ id: 'oldYarn', chance: 0.3, min: 1, max: 1 }, { id: 'nyangJelly', chance: 0.25, min: 1, max: 1 }],
+    loot: [
+      { id: 'oldYarn', chance: 0.3, min: 1, max: 1 }, { id: 'nyangJelly', chance: 0.25, min: 1, max: 1 },
+      { id: 'fadedBell', chance: 0.2, min: 1, max: 1 }, // 액세서리 재료(위임 배치안, 확률 TEMP)
+    ],
     testStatus: { tag: 'bleed', intensity: 3, duration: 4 },
   },
   meteorRat: {
@@ -100,6 +104,7 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
       // 보호구 재료(위임 배치 승인, 확률 TEMP): 낡은 천조각·낡은 스웨터
       { id: 'oldCloth', chance: 0.3, min: 1, max: 1 },
       { id: 'oldSweater', chance: 0.3, min: 1, max: 1 },
+      { id: 'wornLeather', chance: 0.15, min: 1, max: 1 }, // 헤진 가죽조각(확인서 수급안, 확률 TEMP)
     ],
     testStatus: { tag: 'burn', intensity: 4, duration: 3 },
   },
@@ -111,6 +116,7 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
       { id: 'smallStone', chance: 1, min: 2, max: 3 },
       { id: 'smoothStone', chance: 0.6, min: 1, max: 1 },
       { id: 'nyangJelly', chance: 1, min: 3, max: 5 },
+      { id: 'sunDust', chance: 1, min: 2, max: 4 }, // 마법의 햇살가루(위임 배치안, 수량 TEMP)
     ],
   },
   kingDustSlime: {

@@ -1,5 +1,6 @@
 import { ENHANCE_RULES, ENHANCE_TABLE, SPECIAL_REWARDS, WEAPON_DEFS, enhanceAttackBonus, type MaterialCount, type WeaponId } from '../data/weapons';
 import { ARMOR_DEFS, ARMOR_IDS, ARMOR_SPECIAL_REWARDS, armorStatsAt, emptyArmorStats, type ArmorId, type ArmorSlot, type ArmorStats } from '../data/armor';
+import { ACCESSORY_DEFS, ACCESSORY_IDS, ACCESSORY_SLOTS, ACCESSORY_SPECIAL_REWARDS, accessoryValueAt, type AccessoryId, type AccessoryStatKey } from '../data/accessories';
 import type { MaterialId } from '../data/items';
 import type { SaveData } from './save';
 import { TUNING } from '../config/tuning';
@@ -54,7 +55,7 @@ export function firstClearArmorBlueprints(chapter: number): ArmorId[] {
 
 /** 클리어 1회분 특별 재료(무기·보호구 공통, 행운 미적용, 매 클리어 재료당 1개) */
 export function specialClearRewards(chapter: number, difficulty: 'normal' | 'hard', mainCh8Cleared: boolean): MaterialId[] {
-  const out = [...SPECIAL_REWARDS, ...ARMOR_SPECIAL_REWARDS]
+  const out = [...SPECIAL_REWARDS, ...ARMOR_SPECIAL_REWARDS, ...ACCESSORY_SPECIAL_REWARDS]
     .filter((r) => r.difficulty === difficulty && r.chapters.includes(chapter) && (!r.requiresCh8 || mainCh8Cleared))
     .map((r) => r.material);
   return [...new Set(out)];
@@ -105,7 +106,7 @@ export function enhanceInfo(save: SaveData, id: WeaponId): EnhanceInfo {
 }
 
 /** 무기·보호구 공통 강화 판정(성공률·소모량·실패 보정·10회 보장은 무기 공통표) */
-function enhanceInfoFor(save: SaveData, def: Enhanceable, w: EnhanceState | undefined): EnhanceInfo {
+function enhanceInfoFor(save: SaveData, def: Enhanceable, w: EnhanceState | undefined, unlocked = forgeUnlocked(save)): EnhanceInfo {
   const level = w?.level ?? 0;
   const row = ENHANCE_TABLE[level];
   const base: EnhanceInfo = { level, target: row?.target ?? null, baseRate: row?.rate ?? 0, rate: 0, fails: 0, pityLeft: 0, material: null, specials: [], blocker: null };
@@ -118,7 +119,7 @@ function enhanceInfoFor(save: SaveData, def: Enhanceable, w: EnhanceState | unde
   const material = { id: def.enhanceMaterial, count: row.material };
   const specials = row.target === 5 ? def.special5 : row.target === 10 ? def.special10 : [];
   let blocker: EnhanceInfo['blocker'] = null;
-  if (!forgeUnlocked(save)) blocker = 'forgeLocked';
+  if (!unlocked) blocker = 'forgeLocked';
   else if (!have(save, material)) blocker = 'material';
   else if (!specials.every((m) => have(save, m))) blocker = 'special';
   return { ...base, rate, fails, pityLeft: Math.max(0, ENHANCE_RULES.pityAfterFails - fails), material, specials, blocker };
@@ -134,8 +135,8 @@ export function enhanceWeapon(save: SaveData, id: WeaponId, roll: () => number):
   return enhanceFor(save, WEAPON_DEFS[id], save.weapons[id], roll);
 }
 
-function enhanceFor(save: SaveData, def: Enhanceable, state: EnhanceState | undefined, roll: () => number): EnhanceResult {
-  const info = enhanceInfoFor(save, def, state);
+function enhanceFor(save: SaveData, def: Enhanceable, state: EnhanceState | undefined, roll: () => number, unlocked = forgeUnlocked(save)): EnhanceResult {
+  const info = enhanceInfoFor(save, def, state, unlocked);
   if (info.blocker || !info.material || info.target === null || !state) return { attempted: false, success: false, info, newLevel: info.level };
   const w = state;
   spend(save, [info.material]);
@@ -237,4 +238,73 @@ export function combineResist(parts: number[], opts: { stacking: 'additive' | 'm
   if (!parts.length) return 0;
   const raw = opts.stacking === 'additive' ? parts.reduce((a, b) => a + b, 0) : 1 - parts.reduce((a, b) => a * (1 - b), 1);
   return Math.max(0, Math.min(opts.cap, raw));
+}
+
+// ───────────────────────── 액세서리(나비 공방)
+
+/** 나비 공방: 나비 구출 후에만(미래 시설 조기 개방 금지). */
+export function workshopUnlocked(save: SaveData): boolean {
+  return save.rescued.includes('nabi');
+}
+
+export function canCraftAccessory(save: SaveData, id: AccessoryId): CraftCheck {
+  if (!workshopUnlocked(save)) return 'forgeLocked';
+  if (!save.accessoryBlueprints.includes(id)) return 'noBlueprint';
+  if (save.accessories[id]) return 'owned';
+  if (!ACCESSORY_DEFS[id].craft.every((x) => have(save, x))) return 'materials';
+  return 'ok';
+}
+
+/** 제작. 무기·보호구와 같은 재료 창고에서 확정 수량을 소모한다. 같은 아이템은 하나만 보유. */
+export function craftAccessory(save: SaveData, id: AccessoryId): CraftCheck {
+  const c = canCraftAccessory(save, id);
+  if (c !== 'ok') return c;
+  spend(save, ACCESSORY_DEFS[id].craft);
+  save.accessories[id] = { level: 0, fails: {} };
+  return 'ok';
+}
+
+/** 강화 판정(공통표). 잠금은 나비 공방 기준. */
+export function accessoryEnhanceInfo(save: SaveData, id: AccessoryId): EnhanceInfo {
+  return enhanceInfoFor(save, ACCESSORY_DEFS[id], save.accessories[id], workshopUnlocked(save));
+}
+
+/** 강화 1회: 무기·보호구와 같은 공통 규칙, 효과만 액세서리 대표 효과 하나. */
+export function enhanceAccessory(save: SaveData, id: AccessoryId, roll: () => number): EnhanceResult {
+  return enhanceFor(save, ACCESSORY_DEFS[id], save.accessories[id], roll, workshopUnlocked(save));
+}
+
+export type AccessoryEquipCheck = 'ok' | 'notOwned' | 'duplicate' | 'badSlot';
+
+/**
+ * 액세서리 착용(캠프에서만). 종류 무관 2칸. 같은 아이템은 등급과 상관없이 두 칸에 동시에 낄 수 없다.
+ * 같은 종류의 다른 아이템(예: 햇살 반지 + 달빛 반지)과 두 시리즈 혼합은 허용. 세트 보너스 없음.
+ */
+export function equipAccessory(save: SaveData, id: AccessoryId, slot: number): AccessoryEquipCheck {
+  if (slot < 0 || slot >= ACCESSORY_SLOTS) return 'badSlot';
+  if (!save.accessories[id]) return 'notOwned';
+  if (save.equipment.accessories.some((x, i) => x === id && i !== slot)) return 'duplicate';
+  save.equipment.accessories[slot] = id;
+  return 'ok';
+}
+
+export function unequipAccessory(save: SaveData, slot: number): void {
+  if (slot >= 0 && slot < ACCESSORY_SLOTS) save.equipment.accessories[slot] = null;
+}
+
+/**
+ * 착용 액세서리 효과 합(같은 종류 효과끼리 단순 합, 상한은 전투 쪽에서 패시브와 합친 뒤 적용).
+ * 저장을 읽기만 하며, 중복 아이템·보유하지 않은 아이템은 한 번도 세지 않는다. 세트 보너스 없음.
+ */
+export function equippedAccessoryStats(save: SaveData): Record<AccessoryStatKey, number> {
+  const out = { attack: 0, maxHp: 0, critChance: 0, critDamage: 0, attackSpeed: 0, cooldown: 0, regenInterval: 0, defense: 0, luck: 0, energyRegen: 0 };
+  const seen = new Set<AccessoryId>();
+  for (const id of save.equipment.accessories.slice(0, ACCESSORY_SLOTS)) {
+    if (!id || seen.has(id) || !ACCESSORY_IDS.includes(id)) continue;
+    const st = save.accessories[id];
+    if (!st) continue;
+    seen.add(id);
+    out[ACCESSORY_DEFS[id].stat] += accessoryValueAt(id, st.level);
+  }
+  return out;
 }

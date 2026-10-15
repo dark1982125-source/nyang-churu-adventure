@@ -166,13 +166,14 @@ describe('강화', () => {
 
 describe('특별 재료 보상', () => {
   test('일반 난도 지정 챕터 클리어마다 1개', () => {
-    expect(specialClearRewards(2, 'normal', false)).toEqual(['hardFishbone']);
-    expect(specialClearRewards(3, 'normal', false).sort()).toEqual(['angoraSweater', 'cozyBlanketPiece', 'glossyLeather', 'magicCatnipBall']);
+    // 7차: 액세서리 특별 재료(위임 배치안)도 같은 구조로 지급
+    expect(specialClearRewards(2, 'normal', false).sort()).toEqual(['auroraPearl', 'hardFishbone', 'silkKnot']);
+    expect(specialClearRewards(3, 'normal', false).sort()).toEqual(['angoraSweater', 'cozyBlanketPiece', 'flowerKnot', 'glossyLeather', 'magicCatnipBall', 'sacredCharm']);
   });
 
   test('고난도 전설 재료는 본편 Ch 8 일반 클리어 이후에만', () => {
     expect(specialClearRewards(3, 'hard', false)).toEqual([]);
     // 황금빛 털뭉치는 장갑·누빔모자 공용 재료라 한 번만(1개) 지급
-    expect(specialClearRewards(3, 'hard', true).sort()).toEqual(['camoFeather', 'cloudLeather', 'fairyRibbon', 'goldenCatnipBranch', 'goldenFurball', 'grandmaSweater', 'steelWeb']);
+    expect(specialClearRewards(3, 'hard', true).sort()).toEqual(['camoFeather', 'cloudLeather', 'fairyRibbon', 'goldenCatnipBranch', 'goldenFurball', 'grandmaSweater', 'solarCharm', 'steelWeb']);
   });
 });

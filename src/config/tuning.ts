@@ -162,6 +162,29 @@ export const TUNING = {
   },
 
   /**
+   * 액세서리 대표 효과 수치(액세서리-10종-확정정리.md). 효과 종류는 확정, 수치·상한은 전부 TEMP.
+   * curve: +0 base, +1~4 단계마다 perLow, +5 unique(총), +6~9 단계마다 perHigh, +10 legend(총). 무기 공격력표 아님.
+   * 비율 값: attack 공격력 +%, critChance %p, critDamage 치명타 배율 +, attackSpeed 기본 공격 주기 -%, cooldown 쿨타임 -%,
+   * regenInterval 회복 간격 -%(같은 회복량을 더 짧은 간격으로), energyRegen 냥기력 회복 +%. maxHp·defense·luck은 포인트.
+   */
+  accessory: {
+    values: {
+      attack: { base: 0.04, perLow: 0.008, unique: 0.1, perHigh: 0.012, legend: 0.2 }, // TEMP
+      maxHp: { base: 15, perLow: 2, unique: 30, perHigh: 3, legend: 50 }, // TEMP
+      critChance: { base: 0.03, perLow: 0.004, unique: 0.06, perHigh: 0.006, legend: 0.1 }, // TEMP
+      critDamage: { base: 0.1, perLow: 0.02, unique: 0.2, perHigh: 0.03, legend: 0.4 }, // TEMP
+      attackSpeed: { base: 0.04, perLow: 0.006, unique: 0.08, perHigh: 0.01, legend: 0.14 }, // TEMP
+      cooldown: { base: 0.04, perLow: 0.006, unique: 0.08, perHigh: 0.01, legend: 0.14 }, // TEMP
+      regenInterval: { base: 0.08, perLow: 0.01, unique: 0.15, perHigh: 0.015, legend: 0.25 }, // TEMP
+      defense: { base: 5, perLow: 1, unique: 12, perHigh: 1.5, legend: 22 }, // TEMP
+      luck: { base: 2, perLow: 0.4, unique: 5, perHigh: 0.6, legend: 9 }, // TEMP
+      energyRegen: { base: 0.08, perLow: 0.012, unique: 0.15, perHigh: 0.02, legend: 0.3 }, // TEMP
+    },
+    /** 패시브와 합친 뒤 적용하는 상한(TEMP). 치명타 확률·쿨타임은 기존 패시브 상한(passives.caps)을 같이 쓴다 */
+    caps: { attackSpeed: 0.5, regenInterval: 0.6, energyRegen: 1.5 }, // TEMP
+  },
+
+  /**
    * 미정 규칙의 시험 옵션(사용자 결정 전). 기본값은 지금 동작을 바꾸지 않는 쪽.
    * - resist: 같은 종류 저항이 여러 장비에서 올 때 합산 방식·상한·빙결 최대시간과의 적용 순서.
    * - enemyCrit: 적 치명타 발생 규칙. 확정 전이라 기본 꺼짐(조끼 +10 치명타 피해 감소는 꺼져 있으면 효과 없음).
@@ -181,6 +204,12 @@ export const TUNING = {
       /** 'bonusOnly' 치명타 추가분만 감소, 'wholeHit' 치명타 피해 전체 감소 */
       reduction: 'bonusOnly' as 'bonusOnly' | 'wholeHit', // TEMP
     },
+    /**
+     * 체력 자동 회복 개시 조건: 회복 패시브 없이 햇살 방울 브로치만 끼었을 때 회복을 시작할지.
+     * false(지금): 브로치는 회복 간격만 줄이고, 회복 패시브가 있어야 회복한다. true면 soloRegen(초당)으로 단독 회복.
+     */
+    broochSoloRegen: false, // 미정
+    soloRegen: 0.5, // TEMP(켰을 때만) 기준 간격 기준 초당 회복량
     heroKnockback: {
       /** 'campStays' 캠프는 제자리(간격 줄어듦, 최소 간격에서 멈춤), 'campPushed' 캠프도 같이 밀려 간격 유지 */
       campSync: 'campStays' as 'campStays' | 'campPushed', // TEMP

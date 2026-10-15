@@ -9,10 +9,12 @@ import { buyNode, canBuyNode, nodeLevel, toggleUltimate } from '../../meta/save'
 import { armorEnhanceInfo, canCraft, canCraftArmor, craftArmor, craftWeapon, enhanceArmor, enhanceInfo, enhanceWeapon, equipArmor, equipWeapon, equippedArmorStats, forgeUnlocked, unequipArmor, visitForge } from '../../meta/forge';
 import { ARMOR_DEFS, ARMOR_IDS, ARMOR_SLOT_NAMES, ARMOR_STAT_NAMES, armorStatsAt, type ArmorId, type ArmorStatKey, type ArmorStats } from '../../data/armor';
 import { pendingClear } from '../../meta/settlement';
+import { accessoryEnhanceInfo, canCraftAccessory, craftAccessory, enhanceAccessory, equipAccessory, equippedAccessoryStats, unequipAccessory, workshopUnlocked } from '../../meta/forge';
+import { ACCESSORY_DEFS, ACCESSORY_IDS, ACCESSORY_STAT_NAMES, accessoryValueAt, type AccessoryStatKey } from '../../data/accessories';
 import { CRAFTABLE_WEAPONS, ENHANCE_RULES, GEAR_SLOT_NAMES, WEAPON_DEFS, enhanceAttackBonus, weaponGrade, type MaterialCount, type WeaponId } from '../../data/weapons';
 import { sound } from '../sound';
 
-type Tab = 'main' | 'growth' | 'ult' | 'gear' | 'forge' | 'armor' | 'settings';
+type Tab = 'main' | 'growth' | 'ult' | 'gear' | 'forge' | 'armor' | 'workshop' | 'settings';
 
 /** 캠프(출격 준비) 화면. 정면 UI 허용 구역. 배치는 검토용. */
 export class CampScene extends Phaser.Scene {
@@ -37,7 +39,7 @@ export class CampScene extends Phaser.Scene {
 
     text(this, 24, 16, '냥냥 츄르 대모험 · 이동 캠프', 26, '#ffd9a0');
     text(this, 24, 52, store.preview
-      ? '[미리보기 전용 저장] 깡깡이 구출·재료 보유 상태로 시작합니다. 실제 저장과 분리되며 새로고침하면 사라집니다.'
+      ? '[미리보기 전용 저장·TEMP 우회] 깡깡이·나비 구출, 액세서리 설계도·재료 보유 상태입니다. 실제 저장과 분리, 새로고침하면 사라집니다.'
       : '임시 표시물 빌드 — 아트·음악은 아직 제공되지 않아 도형·합성음으로 대신합니다.', 13, store.preview ? COLORS.warn : COLORS.dim);
 
     if (store.recovered?.applied && this.tab === 'main') {
@@ -51,9 +53,12 @@ export class CampScene extends Phaser.Scene {
     // 대장간 탭은 깡깡이 구출 전에는 아예 보이지 않는다(미래 시설·동료 정체 비공개)
     const tabs: [Tab, string][] = [['main', '출격'], ['growth', '영구 성장'], ['ult', '궁극기'], ['gear', '장비']];
     if (forgeUnlocked(s)) tabs.push(['forge', '대장간'], ['armor', '보호구']);
+    // 나비 공방(액세서리)은 나비 구출 후에만 탭이 보인다
+    if (workshopUnlocked(s)) tabs.push(['workshop', '나비 공방']);
     tabs.push(['settings', '설정']);
+    const tw = Math.min(122, Math.floor((912 - (tabs.length - 1) * 8) / tabs.length));
     tabs.forEach(([t, label], i) => {
-      button(this, 24 + i * 130, 118, 122, 36, label, () => this.scene.restart({ tab: t }), { color: t === this.tab ? 0x5b4f86 : COLORS.panelLight });
+      button(this, 24 + i * (tw + 8), 118, tw, 36, label, () => this.scene.restart({ tab: t }), { color: t === this.tab ? 0x5b4f86 : COLORS.panelLight, size: tabs.length > 7 ? 14 : 16 });
     });
 
     if (this.tab === 'main') this.drawMain();
@@ -62,6 +67,7 @@ export class CampScene extends Phaser.Scene {
     else if (this.tab === 'gear') this.drawGear();
     else if (this.tab === 'forge' && forgeUnlocked(s)) this.drawForge();
     else if (this.tab === 'armor' && forgeUnlocked(s)) this.drawArmor();
+    else if (this.tab === 'workshop' && workshopUnlocked(s)) this.drawWorkshop();
     else this.drawSettings();
   }
 
@@ -192,16 +198,17 @@ export class CampScene extends Phaser.Scene {
       [GEAR_SLOT_NAMES.head, armorName(s.equipment.head), !!s.equipment.head],
       [GEAR_SLOT_NAMES.body, armorName(s.equipment.body), !!s.equipment.body],
       [GEAR_SLOT_NAMES.feet, armorName(s.equipment.feet), !!s.equipment.feet],
-      [GEAR_SLOT_NAMES.accessory, s.equipment.accessory ?? '비어 있음 (나비 제작 미구현)', false],
+      ...s.equipment.accessories.map((id, i): [string, string, boolean] => [`${GEAR_SLOT_NAMES.accessory} ${i + 1}`, id ? `${ACCESSORY_DEFS[id].name} +${s.accessories[id]?.level ?? 0}` : '비어 있음', !!id]),
       ['코스튬(별도)', s.equipment.costume ?? '비어 있음', false],
     ];
     slots.forEach(([name, v, on], i) => {
-      const y = 186 + i * 40;
-      this.add.rectangle(24, y, 400, 34, COLORS.panel).setOrigin(0);
-      text(this, 36, y + 8, `${name}: ${v}`, 14, on ? COLORS.text : COLORS.dim);
+      const y = 182 + i * 36;
+      this.add.rectangle(24, y, 400, 31, COLORS.panel).setOrigin(0);
+      text(this, 36, y + 7, `${name}: ${v}`, 14, on ? COLORS.text : COLORS.dim);
     });
     const { total } = equippedArmorStats(s);
-    text(this, 24, 434, `보호구 합계(TEMP 수치): ${this.statLine(total) || '없음'}`, 12, '#bff7ff');
+    text(this, 24, 474, `보호구 합계(TEMP): ${this.statLine(total) || '없음'}`, 12, '#bff7ff');
+    text(this, 24, 494, `액세서리 합계(TEMP, 세트 보너스 없음): ${this.accLine(equippedAccessoryStats(s)) || '없음'}`, 12, '#ffe7b8');
 
     text(this, 448, 186, '보유 무기', 18, '#ffd9a0');
     const owned = (Object.keys(s.weapons) as WeaponId[]).filter((id) => s.weapons[id]);
@@ -217,6 +224,65 @@ export class CampScene extends Phaser.Scene {
         if (equipWeapon(s, id) === 'ok') { store.persist(); sound.play('pickup'); }
         this.scene.restart({ tab: 'gear' });
       }, { size: 13, enabled: !on && d.combatReady, color: on ? 0x4f7a5b : COLORS.panelLight });
+    });
+  }
+
+  private accValue(k: AccessoryStatKey, v: number): string {
+    return k === 'maxHp' || k === 'defense' || k === 'luck' ? `+${Math.round(v * 10) / 10}` : k === 'critDamage' ? `+${Math.round(v * 100) / 100}배` : `+${Math.round(v * 1000) / 10}%`;
+  }
+
+  private accLine(st: Record<AccessoryStatKey, number>): string {
+    return (Object.keys(st) as AccessoryStatKey[]).filter((k) => st[k] > 0).map((k) => `${ACCESSORY_STAT_NAMES[k].replace(/\(.*\)/, '')} ${this.accValue(k, st[k])}`).join(' · ');
+  }
+
+  /** 나비 공방: 액세서리 10종 제작·강화·2칸 착용. 같은 아이템 중복 착용 불가, 세트 보너스 없음. */
+  private drawWorkshop(): void {
+    const s = store.save;
+    text(this, 24, 160, this.forgeMsg || '종류 무관 2칸 · 같은 아이템은 한 칸만(등급 무관) · 같은 종류 다른 아이템·시리즈 혼합 가능 · 세트 보너스 없음. 강화 규칙은 장비 공통, 수치 TEMP.', 11, this.forgeMsg ? '#bff7ff' : COLORS.dim);
+    ACCESSORY_IDS.forEach((id, i) => {
+      const d = ACCESSORY_DEFS[id];
+      const col = d.series === 'sun' ? 0 : 1;
+      const row = i % 5;
+      const x = 24 + col * 468;
+      const y = 178 + row * 72;
+      const owned = s.accessories[id];
+      const bp = s.accessoryBlueprints.includes(id);
+      this.add.rectangle(x, y, 456, 68, COLORS.panel).setOrigin(0);
+      const eff = `${ACCESSORY_STAT_NAMES[d.stat].replace(/\(.*\)/, '')} ${this.accValue(d.stat, accessoryValueAt(id, owned?.level ?? 0))}`;
+      text(this, x + 8, y + 3, `${d.name}${owned ? ` +${owned.level} [${weaponGrade(owned.level)}]` : bp ? '' : ' · 설계도 시점 미정(잠김)'} · ${eff}`, 13, owned || bp ? COLORS.text : COLORS.dim);
+      if (!owned) {
+        text(this, x + 8, y + 24, `제작: ${this.matLine(d.craft)}`, 11, COLORS.dim);
+        if (bp) button(this, x + 366, y + 34, 80, 28, '제작', () => {
+          const r = craftAccessory(s, id);
+          if (r === 'ok') { store.persist(); sound.play('levelUp'); }
+          this.scene.restart({ tab: 'workshop', msg: r === 'ok' ? `${d.name} 제작 완료!` : '' });
+        }, { size: 12, enabled: canCraftAccessory(s, id) === 'ok' });
+        return;
+      }
+      const info = accessoryEnhanceInfo(s, id);
+      if (info.blocker === 'max') text(this, x + 8, y + 24, '최대 강화', 11, COLORS.dim);
+      else {
+        const sp = info.specials.length ? ` · 특별(성공 시): ${this.matLine(info.specials)}` : '';
+        text(this, x + 8, y + 22, `+${info.target} ${Math.round(info.rate * 100)}% (실패 ${info.fails}) · ${info.material ? this.matLine([info.material]) : ''}${sp}`, 11, info.blocker ? '#ffb3b3' : COLORS.dim);
+        button(this, x + 196, y + 38, 70, 26, '강화', () => {
+          const r = enhanceAccessory(s, id, Math.random);
+          if (!r.attempted) return;
+          store.persist();
+          sound.play(r.success ? 'levelUp' : 'hurt');
+          this.scene.restart({ tab: 'workshop', msg: r.success ? `성공! ${d.name} +${r.newLevel}` : '실패… 단계·특별 재료 유지, 기본 재료만 소모' });
+        }, { size: 12, enabled: !info.blocker });
+      }
+      const at = s.equipment.accessories.indexOf(id);
+      [0, 1].forEach((slot) => {
+        const here = at === slot;
+        button(this, x + 276 + slot * 88, y + 38, 82, 26, here ? `칸${slot + 1} 해제` : `칸${slot + 1} 착용`, () => {
+          if (here) unequipAccessory(s, slot);
+          else if (equipAccessory(s, id, slot) !== 'ok') return;
+          store.persist();
+          sound.play('pickup');
+          this.scene.restart({ tab: 'workshop' });
+        }, { size: 12, enabled: here || at < 0, color: here ? 0x4f7a5b : COLORS.panelLight });
+      });
     });
   }
 

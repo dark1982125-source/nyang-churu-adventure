@@ -19,6 +19,6 @@ export const COMPANIONS: Record<CompanionId, CompanionDef> = {
   kangkang: { id: 'kangkang', name: '대장장이 깡깡이', initial: false, rescueChapter: 2, support: '무기 제작', implemented: false },
   samsaek: { id: 'samsaek', name: '셰프 삼색이', initial: false, rescueChapter: 3, support: '냥기력 보급', implemented: false },
   bolt: { id: 'bolt', name: '엔지니어 볼트', initial: false, rescueChapter: 4, support: '캠프 응급수리', implemented: false },
-  nabi: { id: 'nabi', name: '나비', initial: false, rescueChapter: 6, support: '보호구·액세서리 제작', implemented: false },
+  nabi: { id: 'nabi', name: '나비', initial: false, rescueChapter: 6, support: '액세서리·코스튬 제작', implemented: false },
   eolluk: { id: 'eolluk', name: '얼룩이', initial: false, rescueChapter: 8, support: '캠프 위장막', implemented: false },
 };
