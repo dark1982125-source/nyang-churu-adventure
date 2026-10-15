@@ -64,7 +64,7 @@ export class BattleScene extends Phaser.Scene {
     this.hudTexts.note = text(this, 180, H - 34, '', 11, '#3d3852').setDepth(11);
 
     this.makeTouchControls();
-    button(this, W / 2 - 50, 8, 100, 30, '나가기', () => this.askQuit(), { size: 13, color: 0x4a3b5c });
+    button(this, W / 2 + 60, 38, 90, 26, '나가기', () => this.askQuit(), { size: 12, color: 0x6a4b6c }).setDepth(13);
     // 탭 전환·앱 종료 직전에도 저널을 한 번 더 저장(이 이벤트에만 의존하지 않는다)
     const flush = () => { if (!this.settled) { recordRunLoot(store.save, this.battle.runId, this.battle.loot); store.persist(); } };
     window.addEventListener('pagehide', flush);
@@ -216,11 +216,6 @@ export class BattleScene extends Phaser.Scene {
         this.t(x, GROUND - 172, `웨이브 ${i + 1}`, 12, '#ffffff');
       }
     });
-    if (b.mode === 'wave') {
-      const ax = sx(b.rightLimit + TUNING.player.width / 2);
-      g.lineStyle(3, 0xff8a65, 0.6).lineBetween(ax, GROUND - 200, ax, GROUND);
-      this.t(ax, GROUND - 212, '전투 구역 끝', 11, '#ffd0c0');
-    }
 
     // 감옥(구출 목표). 개방 전 정체 비공개.
     if (b.chapter.rescue) {
@@ -429,6 +424,11 @@ export class BattleScene extends Phaser.Scene {
     } else {
       w = b.waveIndex >= 3 ? '감옥으로!' : `웨이브 ${b.waveIndex + 1}/3 접근 중`;
     }
+    this.hudTexts.top.setText(
+      `HP ${Math.ceil(b.player.hp)}/${b.player.maxHp}${b.hasBell ? ' 🔔' : ''}  Lv.${b.heroLevel}` +
+      `            냥기력 ${Math.floor(b.player.energy)}` +
+      (b.loadout.ultimateEnabled ? `          궁극기 ${Math.floor(b.ultGauge)}%` : '          궁극기 미해금'),
+    );
     const jelly = b.loot.nyangJelly ?? 0;
     this.hudTexts.right.setText(`${w}\n주운 냥젤리 ${jelly}`);
     const banner = b.effects.find((e) => e.kind === 'banner');

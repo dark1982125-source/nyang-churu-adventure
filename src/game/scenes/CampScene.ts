@@ -73,13 +73,13 @@ export class CampScene extends Phaser.Scene {
     text(this, 40, y0 + 200, '제작 재료 (실패해도 보존)', 18, '#ffd9a0');
     const mats = (Object.keys(MATERIAL_NAMES) as MaterialId[]).filter((m) => (s.materials[m] ?? 0) > 0);
     text(this, 40, y0 + 230, mats.length ? mats.map((m) => `${MATERIAL_NAMES[m]} ${s.materials[m]}`).join(' · ') : '없음', 13).setWordWrapWidth(410);
-    text(this, 40, y0 + 290, `출격 ${s.stats.runs} · 클리어 ${s.stats.clears} · 패배 ${s.stats.defeats}`, 14, COLORS.dim);
+    text(this, 40, y0 + 290, `출격 ${s.stats.runs} · 클리어 ${s.stats.clears} · 패배 ${s.stats.defeats} · 중도 종료 ${s.stats.quits}`, 14, COLORS.dim);
 
     this.add.rectangle(488, y0, 448, 340, COLORS.panel).setOrigin(0);
     text(this, 504, y0 + 12, 'Ch 1 말랑 운석 평원', 20, '#ffd9a0');
     const cleared = s.clearedChapters.includes(1);
     text(this, 504, y0 + 44, cleared ? '구출 완료: 닥터 코숏 · 고난도 Ch 1 해금됨(고난도 미구현)' : '저 멀리 정체를 알 수 없는 감옥이 보입니다.', 14, COLORS.dim);
-    text(this, 504, y0 + 76, '규칙: 오른쪽 전진만 · 대시 없음 · 3웨이브 지정 적 전부 처치\n보스 열쇠로 감옥을 열어야 클리어', 14);
+    text(this, 504, y0 + 76, '규칙: 오른쪽 전진만 · 대시 없음 · 3웨이브마다 목표 처치 후\n엘리트/보스와 부하 전부 처치 · 보스 열쇠로 감옥을 열어야 클리어', 14);
     const mode = s.settings.advanceMode === 'hold' ? '누르는 동안 전진' : '자동 전진(비교 도구)';
     const pass = s.settings.passPolicy === 'frontBlock' ? '전방 전투' : '점프 통과+후방 레이저(비교 도구)';
     text(this, 504, y0 + 122, `전진: ${mode} · 적 통과: ${pass}`, 14, COLORS.warn);
