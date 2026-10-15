@@ -101,11 +101,12 @@ export function heroOffers(skills: RunSkills, weapon: WeaponDef, luck: number, r
 }
 
 /**
- * 캠프 후보: 합류한 지원 동료 전부(슬롯 제한 없음), 각 판 안 Lv.5까지. 최대면 제외.
- * 부족한 칸만 골골기어/캠프 멘탈 회복 두 종류로 채운다.
- * TEMP: 두 종류로 세 칸을 채우는 정책이 미정이라 같은 종류를 두 번 보여 주지 않는다(카드가 2장이 될 수 있음).
+ * 캠프 후보(캠프보상-전환-클리어-확정 §1, 확정): 해당 판 임시 강화. 강화 가능한 서로 다른 기술을 먼저 최대 3개,
+ * 부족한 칸만 골골기어/캠프 체력(멘탈) 즉시 회복으로 채운다. 중복·빈칸·새 혼합 보상 없음 → 유효 선택지가 2개면 2장.
+ * 캠프 체력이 최대면 회복 카드 제외. 골골기어만 남으면 선택창 없이 자동 지급(Battle에서 처리).
+ * 기술 2개일 때 남는 한 칸에 기어/회복 중 무엇을 보일지는 문서에 없어 무작위(TEMP).
  */
-export function campOffers(skills: RunSkills, available: CampSkillId[], rng: Rng): CampOffer[] {
+export function campOffers(skills: RunSkills, available: CampSkillId[], rng: Rng, campFull = false): CampOffer[] {
   const pool: CampOffer[] = [];
   for (const id of available) {
     const lvl = skills.camp[id] ?? 0;
@@ -114,9 +115,14 @@ export function campOffers(skills: RunSkills, available: CampSkillId[], rng: Rng
   }
   rng.shuffle(pool);
   const picked = pool.slice(0, 3);
-  const fillers = rng.shuffle<CampFillerId>(['gear', 'mental']);
+  const fillers = rng.shuffle<CampFillerId>(campFull ? ['gear'] : ['gear', 'mental']);
   for (let k = 0; picked.length < 3 && k < fillers.length; k++) picked.push({ kind: 'filler', id: fillers[k] });
   return picked;
+}
+
+/** 골골기어 하나만 남은 캠프 후보 → 선택창 없이 자동 지급 */
+export function isAutoGrant(offers: Offer[]): boolean {
+  return offers.length === 1 && offers[0].kind === 'filler' && offers[0].id === 'gear';
 }
 
 export const FILLER_LABELS: Record<HeroFillerId | CampFillerId, { title: string; detail: () => string }> = {
@@ -124,7 +130,7 @@ export const FILLER_LABELS: Record<HeroFillerId | CampFillerId, { title: string;
   heal: { title: '츄르 한 입', detail: () => `HP ${TUNING.fillers.heroHeal} 즉시 회복 (TEMP 양)` },
   energy: { title: '기운 충전', detail: () => `냥기력 ${TUNING.fillers.heroEnergy} 즉시 회복 (TEMP 양)` },
   gear: { title: '골골기어', detail: () => `골골기어 +${TUNING.fillers.campGear} (판 획득물, TEMP 양)` },
-  mental: { title: '캠프 멘탈 회복', detail: () => `캠프 멘탈 ${TUNING.fillers.campMental} 즉시 회복 (TEMP 양)` },
+  mental: { title: '캠프 체력 회복', detail: () => `캠프 멘탈 ${TUNING.fillers.campMental} 즉시 회복 (TEMP 양)` },
 };
 
 export function offerLabel(o: Offer, weapon: WeaponDef): { title: string; detail: string } {

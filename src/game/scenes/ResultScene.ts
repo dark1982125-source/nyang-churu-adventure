@@ -41,7 +41,7 @@ export class ResultScene extends Phaser.Scene {
       `지정 처치 ${result.kills.required}/${result.kills.requiredTotal} · 분열 처치 ${result.kills.children}`,
       `호냥이를 지나친 적 ${passes} · 화면 밖 이탈 ${oob}`,
       result.outcome === 'victory'
-        ? `클리어 자동 회수 ${log.find((l) => l.type === 'autoCollect')?.value ?? 0}개 (경험치는 선택창 없이 소멸)`
+        ? `클리어 자동 회수 ${log.filter((l) => l.type === 'autoCollect' && l.detail === 'victory').reduce((n, l) => n + (l.value ?? 0), 0)}개 · 전환 회수 ${log.filter((l) => l.type === 'autoCollect' && l.detail === 'transition').reduce((n, l) => n + (l.value ?? 0), 0)}개`
         : `놓친 드롭 ${missed} (주운 것만 정산)`,
       `큰 돌 파괴 ${log.filter((l) => l.type === 'rockBroken').length} · 캠프 명중 ${log.filter((l) => l.type === 'rockHitCamp').length}`,
       `캠프 조준 요격 ${log.filter((l) => l.type === 'shotBroken').length} · 캠프 명중 ${log.filter((l) => l.type === 'shotHitCamp').length}`,

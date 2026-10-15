@@ -180,6 +180,8 @@ export const TUNING = {
     arenaLength: 0,
     /** 전투 구역 끝에서 적 스폰 지점까지(화면 밖 전방) */
     spawnAhead: 600, // TEMP
+    /** 일반 구간 → 엘리트/보스 등장 연출 시간. 이 동안 전투 타이머 전부 정지(확정), 길이는 TEMP */
+    finaleIntro: 1.2, // TEMP
     /** 분열 적 세대 상한. 무한 분열 방지용 기술적 장치 */
     maxSplitGeneration: 1, // TEMP
   },

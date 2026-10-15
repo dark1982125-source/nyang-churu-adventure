@@ -7,7 +7,7 @@ import { COMPANIONS, type CompanionId } from '../data/companions';
 import { GLOVE, ULTIMATES, type CampSkillId, type ExclusiveSkillDef, type PassiveId, type UltimateId, type WeaponDef } from '../data/skills';
 import type { Loadout } from '../meta/save';
 import {
-  campOffers, heroOffers, type FillerOffer, type Offer, type PendingChoice, type RunSkills,
+  campOffers, heroOffers, isAutoGrant, type FillerOffer, type Offer, type PendingChoice, type RunSkills,
 } from './choices';
 import { Rng } from './rng';
 import { prescriptionOrder, StatusSet, type StatusApply } from './status';
@@ -134,7 +134,8 @@ export interface LogEntry {
     | 'waveStart' | 'waveClear' | 'eliteSpawn' | 'kill' | 'split' | 'pass' | 'outOfBounds' | 'missedPickup'
     | 'levelUp' | 'campLevelUp' | 'skill' | 'ult' | 'revive' | 'bell' | 'key' | 'jailOpen' | 'victory' | 'defeat'
     | 'evade' | 'crit' | 'rockBroken' | 'rockHitCamp' | 'loot' | 'cleanup' | 'quit' | 'filler'
-    | 'status' | 'statusImmune' | 'cure' | 'prescribe' | 'enemyCc' | 'shotBroken' | 'shotHitCamp' | 'autoCollect';
+    | 'status' | 'statusImmune' | 'cure' | 'prescribe' | 'enemyCc' | 'shotBroken' | 'shotHitCamp' | 'autoCollect'
+    | 'transition' | 'finaleIntro' | 'clearConfirmed';
   detail?: string;
   value?: number;
 }
@@ -239,10 +240,18 @@ export class Battle {
   heroStatus = new StatusSet();
   /** 판 임시 방어 보너스(패시브 외 판 안 효과용, 지금은 0) */
   runDefenseBonus = 0;
-  /** 클리어 자동 회수로 들어온 경험치. 최종 선택창 여부가 미정이라 레벨업·선택창 없이 기록만 한다 */
+  /** 클리어 확정 뒤 회수된 경험치. 확정: 레벨업·선택창 없이, 다른 재화로 환산하지 않고 기록만 한다 */
   autoCollectedXp = { hero: 0, camp: 0 };
   /** 호냥이 뒤로 놓친 재화·재료·경험치. 성공 시 자동 회수 대상(TEMP 해석), 실패 시 사라진다 */
   behindDrops: Pickup[] = [];
+  /**
+   * 챕터 클리어 확정(최종 보스와 필수 분열·소환체 전멸 순간). 이후 레벨업 선택·패배 판정 없음,
+   * 경험치는 다른 재화로 환산하지 않고 기록만 한다.
+   */
+  clearConfirmed = false;
+  /** 엘리트/보스 등장 연출 남은 시간. 이 동안 전투 시간·쿨타임·지속시간 전부 정지 */
+  introTimer = 0;
+  private introWave = -1;
 
   skills: RunSkills = { basicLevel: 1, exclusives: [], passives: {}, camp: {} };
   skillCd: Record<string, number> = {};
@@ -384,6 +393,8 @@ export class Battle {
   }
 
   private queueChoice(track: 'hero' | 'camp'): void {
+    // 챕터 클리어가 확정된 뒤에는 레벨업 선택을 띄우지 않는다
+    if (this.clearConfirmed) return;
     this.pending.push({ track, offers: [] });
     // 현재 열린 선택창은 그대로 두고, 대기 중인 것만 호냥이 → 캠프 순으로 정렬
     const [head, ...rest] = this.pending;
@@ -397,11 +408,17 @@ export class Battle {
   }
 
   private activateNextChoice(): void {
-    const p = this.pending[0];
-    if (!p || p.offers.length > 0) return;
-    p.offers = p.track === 'hero'
-      ? heroOffers(this.skills, this.weapon, this.luck, this.rng)
-      : campOffers(this.skills, this.availableCampSkills(), this.rng);
+    for (;;) {
+      const p = this.pending[0];
+      if (!p || p.offers.length > 0) return;
+      p.offers = p.track === 'hero'
+        ? heroOffers(this.skills, this.weapon, this.luck, this.rng)
+        : campOffers(this.skills, this.availableCampSkills(), this.rng, this.camp.mental >= this.camp.maxMental);
+      // 확정: 캠프 후보가 골골기어 하나뿐이면 선택창 없이 자동 지급하고 다음 차례로
+      if (!isAutoGrant(p.offers)) return;
+      this.applyFiller('gear', true);
+      this.pending.shift();
+    }
   }
 
   private applyOffer(o: Offer): void {
@@ -427,7 +444,7 @@ export class Battle {
   }
 
   /** 대체 보상 즉시 적용. 상한을 넘지 않는다. 재화는 판 획득물로 들어가 정산된다. */
-  private applyFiller(id: FillerOffer['id']): void {
+  private applyFiller(id: FillerOffer['id'], auto = false): void {
     const F = TUNING.fillers;
     const p = this.player;
     if (id === 'jelly') this.loot.nyangJelly = (this.loot.nyangJelly ?? 0) + F.heroJelly;
@@ -435,7 +452,7 @@ export class Battle {
     else if (id === 'energy') p.energy = Math.min(p.maxEnergy, p.energy + F.heroEnergy);
     else if (id === 'gear') this.loot.golgolGear = (this.loot.golgolGear ?? 0) + F.campGear;
     else this.camp.mental = Math.min(this.camp.maxMental, this.camp.mental + F.campMental);
-    this.logEvent('filler', id);
+    this.logEvent('filler', auto ? `${id}:auto` : id);
   }
 
   private availableCampSkills(): CampSkillId[] {
@@ -452,6 +469,14 @@ export class Battle {
   update(dtRaw: number, input: InputState): void {
     if (this.finished || this.paused) return;
     const dt = Math.min(dtRaw, 1 / 20);
+    // 엘리트/보스 등장 연출: 전투 시간·쿨타임·지속시간 정지. 배너 연출만 흐른다.
+    if (this.introTimer > 0) {
+      this.introTimer -= dt;
+      for (const e of this.effects) if (e.kind === 'banner') e.ttl -= dt;
+      this.effects = this.effects.filter((e) => e.ttl > 0);
+      if (this.introTimer <= 0) this.spawnFinale(this.introWave);
+      return;
+    }
     this.t += dt;
     this.tickEffects(dt);
 
@@ -570,16 +595,28 @@ export class Battle {
       return;
     }
     if (!w.finaleSpawned) {
-      const e = this.spawnEnemy(def.finale, i, true);
-      e.role = 'finale';
-      w.finaleSpawned = true;
-      w.finaleId = e.id;
-      this.logEvent('eliteSpawn', e.def.name);
-      this.banner(`${e.def.rank === 'boss' ? '보스' : '엘리트'} 등장! ${e.def.name}`, 2.2);
+      // 회수 경험치 선택(일시정지)을 마친 뒤 짧은 등장 연출 → 연출이 끝나면 등장
+      if (this.introWave !== i) {
+        const fd = ENEMIES[def.finale];
+        this.introWave = i;
+        this.introTimer = TUNING.waves.finaleIntro;
+        this.banner(`${fd.rank === 'boss' ? '보스' : '엘리트'} 등장! ${fd.name}`, TUNING.waves.finaleIntro + 1);
+        this.logEvent('finaleIntro', fd.name);
+      }
     } else if (!this.enemies.some((e) => e.wave === i)) {
       // 엘리트/보스 본체와 분열·소환체까지 전부 처치해야 웨이브 종료
       this.clearWave();
     }
+  }
+
+  private spawnFinale(i: number): void {
+    const w = this.waves[i];
+    if (w.finaleSpawned) return;
+    const e = this.spawnEnemy(this.chapter.waves[i].finale, i, true);
+    e.role = 'finale';
+    w.finaleSpawned = true;
+    w.finaleId = e.id;
+    this.logEvent('eliteSpawn', e.def.name);
   }
 
   private pickNormal(allPool: { kind: EnemyKind; weight: number }[]): EnemyKind {
@@ -592,8 +629,11 @@ export class Battle {
   }
 
   /**
-   * 목표 처치 수 달성: 잡몹 스폰 중단, 남은 잡몹은 필드에서 제거(처치 수·드롭·경험치 없음).
-   * 이미 떨어진 드롭·장판·투사체를 함께 지울지는 미정이라 건드리지 않는다.
+   * 목표 처치 수 달성(캠프보상-전환-클리어-확정 §2):
+   * - 잡몹 스폰 중단, 남은 잡몹은 처치 수·드롭·경험치 없이 제거.
+   * - 적 투사체·공격 장판·예고, 호냥이/캠프의 진행 중 공격(예약 타격) 제거.
+   * - 보호막·버프·남은 쿨타임은 유지(초기화·즉시 재사용 없음).
+   * - 필드 드롭 자동 회수 → 회수 경험치 레벨업 선택 → 등장 연출(전투 타이머 정지) → 엘리트/보스.
    */
   private endNormalPhase(i: number): void {
     const w = this.waves[i];
@@ -605,6 +645,21 @@ export class Battle {
     w.cleanedUp = leftovers.length;
     w.phase = 'finale';
     this.logEvent('cleanup', `${i + 1}`, leftovers.length);
+    const removedAttacks = this.hazards.length + this.scheduled.length;
+    this.hazards = [];
+    this.scheduled = [];
+    this.effects = this.effects.filter((f) => !['telegraph', 'aim', 'dropMark', 'zone', 'beam', 'laser'].includes(f.kind));
+    this.logEvent('transition', `${i + 1}`, removedAttacks);
+    this.collectAllDrops();
+  }
+
+  /** 전환 시 자동 회수: 필드·뒤에 남은 드롭을 모두 정상 획득 처리(경험치는 레벨업 선택으로 이어진다). 열쇠 제외 */
+  private collectAllDrops(): void {
+    const all = [...this.pickups.filter((p) => p.kind !== 'key'), ...this.behindDrops];
+    this.pickups = this.pickups.filter((p) => p.kind === 'key');
+    this.behindDrops = [];
+    for (const pk of all) this.collect(pk);
+    this.logEvent('autoCollect', 'transition', all.length);
   }
 
   private startWave(): void {
@@ -618,8 +673,31 @@ export class Battle {
     this.banner(`웨이브 ${i + 1} / 3`, 1.8);
   }
 
+  /**
+   * 챕터 마지막 보스와 필수 분열·소환체 전멸 순간 클리어를 먼저 확정한다(§3).
+   * 같은 틱의 경험치 획득·대기 중 선택보다 우선: 대기 선택을 지우고 이후 레벨업 선택을 막는다.
+   * 남은 드롭은 자동 회수(재화·재료 정산, 경험치는 환산 없이 기록만), 적 공격은 제거해 패배가 끼어들지 않게 한다.
+   */
+  private confirmClear(): void {
+    if (this.clearConfirmed) return;
+    this.clearConfirmed = true;
+    this.pending = [];
+    this.hazards = [];
+    this.scheduled = [];
+    this.logEvent('clearConfirmed');
+    this.autoCollectOnVictory();
+  }
+
+  /** 마지막 웨이브 엘리트/보스 구간에서 그 웨이브 적이 하나도 안 남았는지 */
+  private finalWaveDone(): boolean {
+    const i = this.waves.length - 1;
+    const w = this.waves[i];
+    return this.mode === 'wave' && this.waveIndex === i && w.phase === 'finale' && w.finaleSpawned && !this.enemies.some((e) => e.wave === i);
+  }
+
   private clearWave(): void {
     const i = this.waveIndex;
+    if (i === this.waves.length - 1) this.confirmClear();
     this.waves[i].cleared = true;
     this.logEvent('waveClear', `${i + 1}`);
     this.waveIndex++;
@@ -1103,6 +1181,8 @@ export class Battle {
       if (this.forceBellDrop || this.rng.chance(p)) this.dropPickup('bell', e.x, 1);
     }
     if (e.def.rank === 'boss' && this.chapter.rescue) this.dropPickup('key', e.x, 1);
+    // 마지막 처치 순간 바로 클리어 확정(같은 틱 경험치 획득보다 우선)
+    if (this.finalWaveDone()) this.confirmClear();
   }
 
   private chargeUlt(n: number): void {
@@ -1273,6 +1353,7 @@ export class Battle {
   private collect(pk: Pickup): void {
     switch (pk.kind) {
       case 'catnip':
+        if (this.clearConfirmed) { this.autoCollectedXp.hero += pk.value; break; }
         this.heroXp += pk.value;
         while (this.heroXp >= this.heroXpNeeded) {
           this.heroXp -= this.heroXpNeeded;
@@ -1282,6 +1363,7 @@ export class Battle {
         }
         break;
       case 'gear':
+        if (this.clearConfirmed) { this.autoCollectedXp.camp += pk.value; break; }
         this.campXp += pk.value;
         while (this.campXp >= this.campXpNeeded) {
           this.campXp -= this.campXpNeeded;
@@ -1325,11 +1407,11 @@ export class Battle {
 
   /**
    * 확정: 성공 시 필드에 남은 드롭 자동 회수(감옥은 직접 상호작용이라 제외).
-   * 재화·재료는 판 획득물로 정산. 경험치는 최종 선택창 여부가 미정이라 레벨업·선택창 없이 기록만 한다(완료 정산에서 소멸).
+   * 재화·재료는 판 획득물로 정산. 경험치는 확정 규칙대로 레벨업·선택창·환산 없이 기록만 한다.
    * 보급(캡슐·약)·방울은 판이 끝나 효과가 없어 그대로 사라진다.
    */
   private autoCollectOnVictory(): void {
-    const all = [...this.pickups, ...this.behindDrops];
+    const all = [...this.pickups.filter((p) => p.kind !== 'key'), ...this.behindDrops];
     let n = 0;
     for (const pk of all) {
       if (pk.kind === 'loot' && pk.lootId) {
@@ -1339,9 +1421,9 @@ export class Battle {
       } else if (pk.kind === 'catnip') { this.autoCollectedXp.hero += pk.value; n++; }
       else if (pk.kind === 'gear') { this.autoCollectedXp.camp += pk.value; n++; }
     }
-    this.pickups = [];
+    this.pickups = this.pickups.filter((p) => p.kind === 'key');
     this.behindDrops = [];
-    this.logEvent('autoCollect', undefined, n);
+    if (n > 0 || !this.clearConfirmed) this.logEvent('autoCollect', 'victory', n);
   }
 
   /** [시험] 적 상태이상: 설정에서 켰을 때만 공격에 상태이상을 붙인다 */
@@ -1368,7 +1450,7 @@ export class Battle {
    */
   damagePlayer(n: number, kind: DamageKind = 'direct', status?: StatusApply): boolean {
     const p = this.player;
-    if (this.finished || p.hp <= 0) return false;
+    if (this.finished || this.clearConfirmed || p.hp <= 0) return false;
     // 지속 피해(DOT·지형): 회피·방어력·피격 무적과 무관
     if (kind !== 'direct') {
       p.hp -= n;
@@ -1395,6 +1477,7 @@ export class Battle {
   }
 
   damageCamp(n: number): void {
+    if (this.clearConfirmed) return;
     let left = n;
     if (this.camp.shield > 0) {
       const absorbed = Math.min(this.camp.shield, left);
@@ -1411,7 +1494,7 @@ export class Battle {
    * 캠프가 멀쩡할 때만 호냥이 HP 0에 다시냥 방울(HP 50%, 3초 무적, 판당 1회)을 쓴다.
    */
   private checkDefeat(): void {
-    if (this.finished) return;
+    if (this.finished || this.clearConfirmed) return;
     if (this.camp.mental <= 0) { this.camp.mental = 0; this.defeatCause = 'camp'; this.finish('defeat'); return; }
     const p = this.player;
     if (p.hp > 0) return;
@@ -1434,7 +1517,8 @@ export class Battle {
    * 임시 성장·미사용 방울은 사라지고 신규 구출·클리어 보상은 없다. 이어하기 없음.
    */
   quit(): void {
-    if (this.finished) return;
+    // 클리어가 확정된 뒤(감옥으로 가는 중)는 나가기로 결과를 바꿀 수 없다
+    if (this.finished || this.clearConfirmed) return;
     this.defeatCause = 'quit';
     this.logEvent('quit');
     this.finish('defeat');

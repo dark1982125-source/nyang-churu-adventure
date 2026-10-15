@@ -81,7 +81,7 @@ export class BattleScene extends Phaser.Scene {
 
   /** 판 도중 나가기 확인. 확인창이 떠 있는 동안 전투 시간은 멈춘다. */
   private askQuit(): void {
-    if (this.quitConfirm || this.battle.finished) return;
+    if (this.quitConfirm || this.battle.finished || this.battle.clearConfirmed) return;
     const items: Phaser.GameObjects.GameObject[] = [
       this.add.rectangle(0, 0, W, H, 0x120f1c, 0.75).setOrigin(0).setInteractive(),
       text(this, W / 2, 150, '판을 나갈까요?', 26, '#ffd9a0').setOrigin(0.5, 0),
@@ -469,6 +469,7 @@ export class BattleScene extends Phaser.Scene {
       } else {
         const boss = b.enemies.find((e) => e.role === 'finale');
         const finale = b.chapter.waves[b.waveIndex].finale;
+        if (b.introTimer > 0) { w = `웨이브 ${b.waveIndex + 1}/3 · 등장!`; } else
         w = `웨이브 ${b.waveIndex + 1}/3 · ${boss?.def.rank === 'boss' || finale === 'stompSole' ? '보스' : '엘리트'} 전투`;
       }
     } else {

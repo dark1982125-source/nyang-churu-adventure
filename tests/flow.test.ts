@@ -90,7 +90,7 @@ describe('웨이브: 일반 구간 계속 생성 → 목표 처치 → 잔여 �
     expect(seen.size + b.enemies.filter((e) => !seen.has(e.id)).length).toBeGreaterThan(def.maxAlive);
   });
 
-  test('목표 달성 즉시 스폰 중단, 남은 잡몹은 처치 수·드롭 없이 제거, 이미 떨어진 드롭은 그대로', () => {
+  test('목표 달성 즉시 스폰 중단, 남은 잡몹은 처치 수·드롭 없이 제거, 정당한 드롭은 자동 회수', () => {
     const b = inWave();
     const w = b.waves[0];
     // 잡몹이 여러 마리 있을 때까지 처치 없이 기다린다
@@ -104,22 +104,23 @@ describe('웨이브: 일반 구간 계속 생성 → 목표 처치 → 잔여 �
     expect(alive.length).toBeGreaterThan(1);
     const kills0 = b.killsRequired;
     (b as any).hitEnemy(alive[0], 99999, 0); // 이 처치로 목표 달성
-    const legitDrops = b.pickups.map((p) => p.id);
     const killLogs = b.log.filter((l) => l.type === 'kill').length;
     const leftovers = b.enemies.filter((e) => e.role === 'normal').length;
-    const maxId = Math.max(0, ...b.pickups.map((p) => p.id), ...b.enemies.map((e) => e.id));
-    // 수집이 일어나지 않게 드롭을 멀리 둔다
+    // 정당한 드롭: 멀리 있어도 전환 때 자동 회수된다
     for (const p of b.pickups) { p.x = b.player.x + 2000; }
+    const stone = (b as any).dropPickup('loot', b.player.x + 2000, 2);
+    stone.lootId = 'smallStone';
     b.update(DT, NO_INPUT);
+    if (b.paused) while (b.paused) b.choose(0);
     expect(b.killsRequired).toBe(kills0 + 1);
     expect(b.enemies.some((e) => e.role === 'normal')).toBe(false);
     expect(b.log.find((l) => l.type === 'cleanup')?.value).toBe(leftovers);
     expect(b.log.filter((l) => l.type === 'kill').length).toBe(killLogs); // 제거는 처치 아님
-    expect(b.pickups.some((p) => p.id > maxId)).toBe(false); // 제거된 잡몹은 드롭 없음
-    expect(legitDrops.every((id) => b.pickups.some((p) => p.id === id))).toBe(true); // 정당한 드롭은 지우지 않음
+    expect(b.pickups).toHaveLength(0);
+    expect(b.loot.smallStone).toBe(2);
     expect(w.phase).toBe('finale');
-    // 엘리트 등장
-    b.update(DT, NO_INPUT);
+    // 등장 연출 뒤 엘리트 등장
+    step(b, TUNING.waves.finaleIntro + 0.1);
     expect(b.enemies.some((e) => e.role === 'finale')).toBe(true);
     // 이후 잡몹 스폰 없음
     step(b, 5);
