@@ -131,7 +131,7 @@ describe('자동 전진', () => {
   });
 });
 
-describe('엘리트/보스 정차와 밀쳐내기(호냥이만, 캠프 제자리)', () => {
+describe('밀쳐내기(호냥이만, 캠프 제자리)', () => {
   test('밀쳐내기: 캠프는 제자리, 겹침 없음, 경직 뒤 호위 위치로 복귀하고 나서 함께 전진', () => {
     const b = isolated();
     step(b, 1);
@@ -149,22 +149,6 @@ describe('엘리트/보스 정차와 밀쳐내기(호냥이만, 캠프 제자리
     step(b, 0.5);
     expect(b.camp.x).toBeGreaterThan(cx);
     expect(b.player.x - b.camp.x).toBeCloseTo(TUNING.camp.followGap);
-  });
-
-  test('보스전: 밀려도 복귀 후에는 다시 정차', () => {
-    const b = fresh(1);
-    while (!(b.waveIndex === 2 && b.waves[2].phase === 'finale' && b.waves[2].finaleSpawned)) {
-      if (b.paused) { botChoose(b); continue; }
-      b.update(DT, NO_INPUT);
-      if (b.finished) throw new Error('보스 전에 끝남');
-    }
-    const stopX = b.player.x;
-    const cx = b.camp.x;
-    b.knockbackHero(80);
-    expect(b.player.x).toBeLessThan(stopX);
-    for (let t = 0; t < 3; t += DT) { if (b.paused) botChoose(b); else b.update(DT, NO_INPUT); if (b.finished) break; }
-    expect(b.player.x).toBeCloseTo(stopX);
-    expect(b.camp.x).toBe(cx);
   });
 
   test('밀쳐내기 저항은 밀리는 거리만 줄인다', () => {

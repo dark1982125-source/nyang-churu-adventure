@@ -514,8 +514,9 @@ export class BattleScene extends Phaser.Scene {
       .filter(([, lv]) => lv > 0).map(([id, lv]) => `${PASSIVES[id].name.replace(' 증가', '').replace(' 감소', '')} ${lv}`).join(' · ');
     const lootKinds = Object.keys(b.loot).filter((k) => k !== 'nyangJelly').length;
     const st = b.stats();
-    const finaleStop = b.mode === 'wave' && b.waves[b.waveIndex]?.phase === 'finale';
-    const moveState = b.player.stagger > 0 ? '밀려남(경직)' : b.player.x < b.camp.x + TUNING.camp.followGap - 0.5 ? '호위 위치로 복귀' : finaleStop ? '엘리트/보스 정차' : b.engaged ? '교전 정차' : '자동 전진';
+    const finale = b.mode === 'wave' && b.waves[b.waveIndex]?.phase === 'finale';
+    const moveState = b.player.stagger > 0 ? '밀려남(경직)' : b.player.x < b.camp.x + TUNING.camp.followGap - 0.5 ? '호위 위치로 복귀'
+      : b.engaged ? (finale ? '엘리트/보스 교전' : '교전 정차') : finale ? '엘리트/보스에게 접근' : '자동 전진';
     this.hudTexts.note.setText(
       `[${moveState}] 방어력 ${Math.round(st.defense)} (직접 피해 ×${st.damageTaken.toFixed(2)})` +
       (b.heroStatus.effects.length ? ` | 상태: ${b.heroStatus.effects.map((e) => `${STATUS_NAMES[e.tag]}(${e.source}) ${e.remaining.toFixed(1)}s`).join(', ')}` : '') +

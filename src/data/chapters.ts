@@ -1,5 +1,6 @@
 import type { EnemyKind } from './enemies';
 import type { CompanionId } from './companions';
+import { TUNING } from '../config/tuning';
 
 /**
  * 일반 구간(확정 구조): 목표 처치 수를 채울 때까지 잡몹이 계속 생성된다.
@@ -38,7 +39,7 @@ export interface ChapterDef {
 
 /**
  * Ch 1 말랑 운석 평원. 3웨이브·엘리트 1/엘리트 2/보스 구성과 적 종류는 확정,
- * 목표 처치 수·동시 수·간격·지점은 TEMP.
+ * 목표 처치 수 50/80/100은 CONFIRMED(10차), 동시 수·간격·지점은 TEMP.
  * pebbleRat(캠프 위협 A)·dustBat(B)은 시험 적(TEMP). 설정의 '[시험] 캠프 위협 A/B'를 끄면 풀에서 빠진다.
  */
 export const CHAPTER_1: ChapterDef = {
@@ -48,17 +49,17 @@ export const CHAPTER_1: ChapterDef = {
   waves: [
     {
       triggerX: 700,
-      normal: { pool: [{ kind: 'dustSlime', weight: 3 }, { kind: 'spikyBug', weight: 2 }, { kind: 'pebbleRat', weight: 1 }], killTarget: 9, maxAlive: 5, interval: 1.3 }, // TEMP
+      normal: { pool: [{ kind: 'dustSlime', weight: 3 }, { kind: 'spikyBug', weight: 2 }, { kind: 'pebbleRat', weight: 1 }], killTarget: 50, maxAlive: 6, interval: 0.9 }, // killTarget CONFIRMED 10차, maxAlive·interval TEMP
       finale: 'rollingRat',
     },
     {
       triggerX: 1900,
-      normal: { pool: [{ kind: 'spikyBug', weight: 2 }, { kind: 'meteorRat', weight: 2 }, { kind: 'dustSlime', weight: 2 }, { kind: 'pebbleRat', weight: 2 }, { kind: 'dustBat', weight: 2 }], killTarget: 12, maxAlive: 6, interval: 1.1 }, // TEMP
+      normal: { pool: [{ kind: 'spikyBug', weight: 2 }, { kind: 'meteorRat', weight: 2 }, { kind: 'dustSlime', weight: 2 }, { kind: 'pebbleRat', weight: 2 }, { kind: 'dustBat', weight: 2 }], killTarget: 80, maxAlive: 7, interval: 0.8 }, // killTarget CONFIRMED 10차, maxAlive·interval TEMP
       finale: 'kingDustSlime',
     },
     {
       triggerX: 3100,
-      normal: { pool: [{ kind: 'meteorRat', weight: 3 }, { kind: 'dustSlime', weight: 2 }, { kind: 'spikyBug', weight: 2 }, { kind: 'pebbleRat', weight: 2 }, { kind: 'dustBat', weight: 2 }], killTarget: 13, maxAlive: 7, interval: 1.0 }, // TEMP
+      normal: { pool: [{ kind: 'meteorRat', weight: 3 }, { kind: 'dustSlime', weight: 2 }, { kind: 'spikyBug', weight: 2 }, { kind: 'pebbleRat', weight: 2 }, { kind: 'dustBat', weight: 2 }], killTarget: 100, maxAlive: 8, interval: 0.7 }, // killTarget CONFIRMED 10차, maxAlive·interval TEMP
       finale: 'stompSole',
     },
   ],
@@ -70,4 +71,18 @@ export const CHAPTERS: ChapterDef[] = [CHAPTER_1];
 /** 지정 처치 수 합계 = 일반 구간 목표 + 엘리트/보스 본체. 분열·소환체는 따로 센다. */
 export function requiredKillCount(ch: ChapterDef): number {
   return ch.waves.reduce((sum, w) => sum + w.normal.killTarget + 1, 0);
+}
+
+/** 본편 챕터 수(확정) */
+export const MAIN_CHAPTER_COUNT = 15;
+
+/**
+ * 챕터별 일반 구간 처치 목표 제안(TEMP 증가율 TUNING.waves.killTargetGrowthPerChapter). Ch 1은 확정값 그대로.
+ * implemented=false인 챕터는 아직 없는 챕터라 실제 진행·완료 표시에 쓰지 않는다.
+ */
+export function proposedKillTargets(chapter: number): { targets: [number, number, number]; implemented: boolean } {
+  const base = CHAPTER_1.waves.map((w) => w.normal.killTarget);
+  const mul = 1 + TUNING.waves.killTargetGrowthPerChapter * (chapter - 1);
+  const targets = base.map((n) => (chapter === 1 ? n : Math.round((n * mul) / 5) * 5)) as [number, number, number];
+  return { targets, implemented: CHAPTERS.some((c) => c.id === chapter) };
 }

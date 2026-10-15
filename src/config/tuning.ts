@@ -92,9 +92,9 @@ export const TUNING = {
 
   growth: {
     /** 호냥이 레벨업 필요 경험치(작은 개다래) */
-    heroXpCurve: (level: number) => 3 + level * 2, // TEMP
+    heroXpCurve: (level: number) => 3 + level * 1.5, // TEMP 10차: 3+2L → 3+1.5L(230마리 목표에서 선택 약 15 → 17회)
     /** 캠프 레벨업 필요 경험치(작은 톱니) */
-    campXpCurve: (level: number) => 3 + level * 2, // TEMP
+    campXpCurve: (level: number) => 3 + level * 1.5, // TEMP 10차: 3+2L → 3+1.5L
     exclusiveSlots: 3, // CONFIRMED 전용 5종 중 최대 3종
     passiveSlotLimit: 5, // CONFIRMED 공통 패시브 최대 5종
     passiveMaxLevel: 5, // CONFIRMED 각 Lv.5, 등급 진화 없음
@@ -255,8 +255,13 @@ export const TUNING = {
   waves: {
     /** 호냥이 위치에서 적 스폰 지점까지(화면 오른쪽 끝 근처) */
     spawnAhead: 600, // TEMP
-    /** 엘리트/보스 등장 위치(호냥이 앞, 화면 안). 정차 대기 시간 단축용 */
+    /** 엘리트/보스 등장 위치(호냥이 앞, 화면 안). 10차부터 등장 뒤 호냥이·캠프가 유효 교전 거리까지 함께 다가간다 */
     finaleSpawnAhead: 380, // TEMP
+    /**
+     * 챕터별 일반 구간 처치 목표 증가 제안(Ch 1 50/80/100은 CONFIRMED). Ch n = Ch 1 × (1 + 이 값 × (n - 1)), 5 단위 반올림.
+     * 미구현 챕터에는 적용하지 않는 제안표다.
+     */
+    killTargetGrowthPerChapter: 0.08, // TEMP
     /** 일반 구간 → 엘리트/보스 등장 연출 시간. 이 동안 전투 타이머 전부 정지(확정), 길이는 TEMP */
     finaleIntro: 1.2, // TEMP
     /** 분열 적 세대 상한. 무한 분열 방지용 기술적 장치 */

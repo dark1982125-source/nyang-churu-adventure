@@ -31,17 +31,6 @@ describe('이동: 자동 전진, 캠프와 함께 전진·정차', () => {
     expect(b.camp.moving).toBe(true);
   });
 
-  test('엘리트/보스 구간에서는 함께 정차해 있다', () => {
-    const b = fresh();
-    while (!(b.mode === 'wave' && b.waves[0].phase === 'finale')) { if (b.paused) botChoose(b); b.update(DT, GO); }
-    while (b.paused || b.introTimer > 0) { if (b.paused) botChoose(b); else b.update(DT, GO); }
-    const x = b.player.x;
-    const cx = b.camp.x;
-    for (let i = 0; i < 120; i++) { if (b.paused) botChoose(b); b.update(DT, GO); }
-    expect(b.player.x).toBe(x);
-    expect(b.camp.x).toBe(cx);
-  });
-
   test('점프 중에도 호냥이가 적을 뛰어넘어 적을 뒤에 남기지 않는다', () => {
     const b = fresh();
     b.mode = 'travel';

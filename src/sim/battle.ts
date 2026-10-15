@@ -556,7 +556,8 @@ export class Battle {
     } else p.regenTimer = 0;
 
     // 자동 전진(확정): 일반 구간·이동 구간에서 캠프와 함께 오른쪽으로 전진. 기본 공격이 닿는 전방 적이 있으면
-    // 함께 정차해 싸우고, 가까운 적을 정리하면 재개(재개 판정 여유 TEMP). 엘리트/보스 구간은 정차 유지(rightLimit).
+    // 함께 정차해 싸우고, 가까운 적을 정리하면 재개(재개 판정 여유 TEMP). 엘리트/보스 구간도 같은 방식(10차):
+    // 기본 공격이 닿을 때까지 함께 다가가고, 적이 물러나거나 호냥이가 밀려나면 다시 다가간다.
     p.stagger = Math.max(0, p.stagger - dt);
     this.updateEngage();
     // 밀쳐내기 뒤에는 경직이 끝나면 원래 호위 위치까지 먼저 복귀(그동안 캠프는 제자리)
@@ -568,7 +569,7 @@ export class Battle {
     if (wantMove) {
       const speed = (returning ? Math.max(TUNING.heroKnockback.returnSpeed, TUNING.player.moveSpeed) : TUNING.player.moveSpeed) * this.heroStatus.moveMul;
       let nx = p.x + speed * dt;
-      // 복귀 중에는 호위 위치까지만, 그 뒤에는 구간 한계(엘리트/보스 정차 지점·다음 웨이브 지점·감옥 앞)까지
+      // 복귀 중에는 호위 위치까지만, 그 뒤에는 구간 한계(다음 웨이브 지점·감옥 앞)까지
       nx = Math.min(nx, returning ? escortX : this.rightLimit);
       // 적에게 막힌다. 확정 규칙(frontBlock)에서는 점프 중에도 적을 뛰어넘어 뒤에 남기지 않는다.
       // 비교 도구(jumpPass)에서만 공중에서 넘어갈 수 있다.
@@ -598,7 +599,11 @@ export class Battle {
    */
   private updateEngage(): void {
     const extra = this.engaged ? TUNING.advance.resumeMargin : 0;
-    this.engaged = this.reachableEnemies(TUNING.basicAttack.range + extra, true).length > 0;
+    const range = TUNING.basicAttack.range + extra;
+    if (this.reachableEnemies(range, true).length > 0) { this.engaged = true; return; }
+    // 엘리트/보스 구간: 필수 적(본체·분열·소환체)은 높이 떠 있어도 가로로 닿는 거리에 오면 멈춘다(지나쳐 걷지 않고 점프 펀치로 친다)
+    const w = this.mode === 'wave' ? this.waves[this.waveIndex] : undefined;
+    this.engaged = !!w && w.phase === 'finale' && this.frontEnemies(range).some((e) => e.wave === this.waveIndex && e.role !== 'normal');
   }
 
   /** 기본 공격이 닿는 전방 적. groundTop이면 착지 상태 기준 높이(점프로 판정이 바뀌지 않게) */
@@ -691,8 +696,9 @@ export class Battle {
     this.enemies = this.enemies.filter((e) => !leftovers.includes(e));
     w.cleanedUp = leftovers.length;
     w.phase = 'finale';
-    // 엘리트/보스 구간은 정차 유지: 지금 호위 위치에서 멈춘다(밀려 있었다면 복귀 지점까지만)
-    this.rightLimit = Math.max(this.player.x, this.camp.x + TUNING.camp.followGap);
+    // 엘리트/보스 구간(10차 수정): 제자리 고정을 없앤다. 등장한 엘리트/보스에게 기본 공격이 닿을 때까지
+    // 캠프와 함께 전진하고, 닿는 거리에서 함께 멈춘다. 밀려나거나 적이 물러나면 다시 다가간다(updateEngage).
+    this.rightLimit = Infinity;
     this.logEvent('cleanup', `${i + 1}`, leftovers.length);
     const removedAttacks = this.hazards.length + this.scheduled.length;
     this.hazards = [];

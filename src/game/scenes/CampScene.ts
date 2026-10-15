@@ -165,7 +165,7 @@ export class CampScene extends Phaser.Scene {
   private drawSettings(): void {
     const s = store.save;
     text(this, 24, 172, '전진 방식 — 확정: 자동 전진', 18, '#ffd9a0');
-    text(this, 24, 204, '호냥이와 캠프가 함께 자동으로 전진하고, 기본 공격이 닿는 거리에 적이 오면\n함께 멈춰 싸웁니다. 가까운 적을 정리하면 다시 전진. 엘리트/보스전은 정차.', 14, COLORS.dim);
+    text(this, 24, 204, '호냥이와 캠프가 함께 자동으로 전진하고, 기본 공격이 닿는 거리에 적이 오면\n함께 멈춰 싸웁니다. 가까운 적을 정리하면 다시 전진. 엘리트/보스도 공격이 닿는 거리까지 함께 다가갑니다.', 14, COLORS.dim);
 
     text(this, 24, 262, '적 통과 — 확정: 전방 전투. 점프 통과는 비교용 개발 도구', 18, '#ffd9a0');
     button(this, 24, 294, 300, 44, `전방 전투: 서로 넘어가지 않음${s.settings.passPolicy === 'frontBlock' ? ' ✔' : ''}`, () => {
