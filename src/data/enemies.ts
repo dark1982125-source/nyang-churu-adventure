@@ -28,9 +28,13 @@ export interface EnemyDef {
   height: number;
   contactDamage: number;
   contactInterval: number;
-  /** 작은 개다래(호냥이 경험치) 개수 */
-  catnip: number;
-  /** 작은 톱니(캠프 경험치) 드롭 확률 */
+  /**
+   * 호냥이 경험치(작은 개다래 하나에 담긴 양). 적 종류별로 다르다(TEMP). 처치하면 반드시 떨어져 드롭 운에 기대지 않는다.
+   */
+  xp: number;
+  /**
+   * 작은 톱니(캠프 경험치) 기대값. 확률 추첨 대신 처치마다 이 값을 쌓아 1이 넘을 때마다 떨어뜨린다(운 의존 완화, TEMP).
+   */
   gearChance: number;
   loot: LootRoll[];
   /** 분열: 처치 시 생성할 자식 */
@@ -73,7 +77,7 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
   dustSlime: {
     kind: 'dustSlime', name: '먼지 슬라임', rank: 'normal',
     hp: 24, speed: 42, width: 34, height: 26, contactDamage: 6, contactInterval: 0.8,
-    catnip: 1, gearChance: 0.35,
+    xp: 1, gearChance: 0.35,
     loot: [
       { id: 'softJelly', chance: 0.35, min: 1, max: 1 }, { id: 'nyangJelly', chance: 0.25, min: 1, max: 1 },
       // 보호구 재료(위임 배치 승인, 확률 TEMP): 폭신 마시멜로·끈끈 슬라임풀
@@ -85,7 +89,7 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
   spikyBug: {
     kind: 'spikyBug', name: '삐죽 풀벌레', rank: 'normal',
     hp: 18, speed: 72, width: 30, height: 22, contactDamage: 5, contactInterval: 0.8,
-    catnip: 1, gearChance: 0.35,
+    xp: 1, gearChance: 0.35,
     loot: [
       { id: 'oldYarn', chance: 0.3, min: 1, max: 1 }, { id: 'nyangJelly', chance: 0.25, min: 1, max: 1 },
       { id: 'fadedBell', chance: 0.2, min: 1, max: 1 }, // 액세서리 재료(위임 배치안, 확률 TEMP)
@@ -96,7 +100,7 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
   meteorRat: {
     kind: 'meteorRat', name: '운석 쥐', rank: 'normal',
     hp: 30, speed: 110, width: 32, height: 24, contactDamage: 8, contactInterval: 0.8,
-    catnip: 2, gearChance: 0.4,
+    xp: 2, gearChance: 0.4,
     loot: [
       { id: 'smallStone', chance: 0.3, min: 1, max: 1 },
       { id: 'oldYarn', chance: 0.2, min: 1, max: 1 },
@@ -112,7 +116,7 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
   rollingRat: {
     kind: 'rollingRat', name: '돌돌 운석쥐', rank: 'elite',
     hp: 200, speed: 60, width: 52, height: 42, contactDamage: 10, contactInterval: 0.8,
-    catnip: 8, gearChance: 1,
+    xp: 20, gearChance: 1,
     loot: [
       { id: 'smallStone', chance: 1, min: 2, max: 3 },
       { id: 'smoothStone', chance: 0.6, min: 1, max: 1 },
@@ -123,7 +127,7 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
   kingDustSlime: {
     kind: 'kingDustSlime', name: '왕먼지 슬라임', rank: 'elite',
     hp: 240, speed: 34, width: 64, height: 50, contactDamage: 10, contactInterval: 0.9,
-    catnip: 8, gearChance: 1,
+    xp: 25, gearChance: 1,
     loot: [
       { id: 'hardJelly', chance: 1, min: 3, max: 5 }, // 단단젤리 일반 난도 엘리트 100% 3~5 (확정 초기 설정)
       { id: 'softJelly', chance: 1, min: 1, max: 2 },
@@ -136,7 +140,7 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
   stompSole: {
     kind: 'stompSole', name: '쿵쿵 돌발바닥', rank: 'boss',
     hp: 650, speed: 30, width: 96, height: 92, contactDamage: 14, contactInterval: 1,
-    catnip: 0, gearChance: 0,
+    xp: 0, gearChance: 0,
     loot: [
       { id: 'smallStone', chance: 1, min: 3, max: 4 },
       { id: 'smoothStone', chance: 1, min: 1, max: 2 },
@@ -150,14 +154,14 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
   pebbleRat: {
     kind: 'pebbleRat', name: '(시험) 조약돌 투척쥐', rank: 'normal', temp: true,
     hp: 22, speed: 70, width: 30, height: 26, contactDamage: 5, contactInterval: 0.9,
-    catnip: 1, gearChance: 0.4,
+    xp: 2, gearChance: 0.4,
     loot: [{ id: 'smallStone', chance: 0.3, min: 1, max: 1 }, { id: 'nyangJelly', chance: 0.25, min: 1, max: 1 }],
     campShot: { style: 'lob', standoff: 240, shotsBeforeAdvance: 2, cooldown: 4.2, telegraph: 0.9, duration: 1.6, startY: 30, endY: 50, arc: 110, radius: 11, hp: 1, campDamage: 10 },
   },
   dustBat: {
     kind: 'dustBat', name: '(시험) 먼지 박쥐', rank: 'normal', temp: true,
     hp: 18, speed: 80, width: 30, height: 20, contactDamage: 0, contactInterval: 1,
-    catnip: 1, gearChance: 0.4,
+    xp: 2, gearChance: 0.4,
     loot: [{ id: 'oldYarn', chance: 0.3, min: 1, max: 1 }, { id: 'nyangJelly', chance: 0.25, min: 1, max: 1 }],
     flying: { altitude: 125 },
     campShot: { style: 'drop', standoff: 150, shotsBeforeAdvance: 2, cooldown: 5, telegraph: 1.1, duration: 1.3, startY: 125, endY: 40, arc: 30, radius: 12, hp: 1, campDamage: 12 },

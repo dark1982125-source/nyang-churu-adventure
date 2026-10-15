@@ -27,7 +27,7 @@ const own = (s: SaveData, id: ArmorId, level = 0) => { s.armor[id] = { level, fa
 const battle = (s: SaveData, seed = 3) => new Battle({ runId: 1, seed, loadout: buildLoadout(s) });
 const victory = (runId: number, chapterId: number): RunResult => ({
   runId, chapterId, outcome: 'victory', defeatCause: null, rescued: null, loot: {}, heroLevel: 1, time: 1,
-  kills: { required: 0, requiredTotal: 0, children: 0 },
+  kills: { normal: 0, finale: 0, children: 0 },
 });
 
 describe('보호구 6종 데이터(확정표 그대로)', () => {

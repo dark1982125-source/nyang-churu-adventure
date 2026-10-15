@@ -42,74 +42,12 @@ describe('이동: 자동 전진, 캠프와 함께 전진·정차', () => {
   });
 });
 
-describe('웨이브: 일반 구간 계속 생성 → 목표 처치 → 잔여 정리 → 엘리트/보스', () => {
+describe('웨이브: 일반 구간(시간제, 11차) → 잔여 정리 → 엘리트/보스 (자세한 시간 판정은 timedWaves.test)', () => {
   function inWave() {
     const b = fresh();
     while (b.mode !== 'wave') b.update(DT, GO);
     return b;
   }
-
-  test('목표 처치 수 전까지는 동시 수 한도 안에서 계속 생성된다', () => {
-    const b = inWave();
-    const def = b.chapter.waves[0].normal;
-    let spawned = 0;
-    const seen = new Set<number>();
-    for (let i = 0; i < 60 * 20; i++) {
-      for (const e of b.enemies) if (!seen.has(e.id)) { seen.add(e.id); spawned++; }
-      // 처치는 하지 않도록 피해를 막아 둔다
-      for (const e of b.enemies) e.hp = 9999;
-      b.player.hp = b.player.maxHp;
-      b.camp.mental = b.camp.maxMental;
-      if (b.paused) botChoose(b);
-      b.update(DT, NO_INPUT);
-      expect(b.enemies.filter((e) => e.role === 'normal').length).toBeLessThanOrEqual(def.maxAlive);
-    }
-    expect(b.waves[0].phase).toBe('normal');
-    expect(b.waves[0].finaleSpawned).toBe(false);
-    // 한도까지 찬 뒤로는 처치 전까지 더 늘지 않는다
-    expect(spawned).toBe(def.maxAlive);
-    // 몇 마리 처치하면 다시 보충된다(목표 전 계속 생성)
-    for (const e of b.enemies.slice(0, 2)) (b as any).hitEnemy(e, 99999, 0);
-    step(b, def.interval * 3 + 0.1);
-    expect(seen.size + b.enemies.filter((e) => !seen.has(e.id)).length).toBeGreaterThan(def.maxAlive);
-  });
-
-  test('목표 달성 즉시 스폰 중단, 남은 잡몹은 처치 수·드롭 없이 제거, 정당한 드롭은 자동 회수', () => {
-    const b = inWave();
-    const w = b.waves[0];
-    // 잡몹이 여러 마리 있을 때까지 처치 없이 기다린다
-    for (let i = 0; i < 600 && b.enemies.length < 3; i++) {
-      for (const e of b.enemies) e.hp = 9999;
-      b.player.hp = b.player.maxHp;
-      b.update(DT, NO_INPUT);
-    }
-    w.normalKills = b.chapter.waves[0].normal.killTarget - 1;
-    const alive = b.enemies.filter((e) => e.role === 'normal');
-    expect(alive.length).toBeGreaterThan(1);
-    const kills0 = b.killsRequired;
-    (b as any).hitEnemy(alive[0], 99999, 0); // 이 처치로 목표 달성
-    const killLogs = b.log.filter((l) => l.type === 'kill').length;
-    const leftovers = b.enemies.filter((e) => e.role === 'normal').length;
-    // 정당한 드롭: 멀리 있어도 전환 때 자동 회수된다
-    for (const p of b.pickups) { p.x = b.player.x + 2000; }
-    const stone = (b as any).dropPickup('loot', b.player.x + 2000, 2);
-    stone.lootId = 'smallStone';
-    b.update(DT, NO_INPUT);
-    if (b.paused) while (b.paused) b.choose(0);
-    expect(b.killsRequired).toBe(kills0 + 1);
-    expect(b.enemies.some((e) => e.role === 'normal')).toBe(false);
-    expect(b.log.find((l) => l.type === 'cleanup')?.value).toBe(leftovers);
-    expect(b.log.filter((l) => l.type === 'kill').length).toBe(killLogs); // 제거는 처치 아님
-    expect(b.pickups).toHaveLength(0);
-    expect(b.loot.smallStone).toBe(2);
-    expect(w.phase).toBe('finale');
-    // 등장 연출 뒤 엘리트 등장
-    step(b, TUNING.waves.finaleIntro + 0.1);
-    expect(b.enemies.some((e) => e.role === 'finale')).toBe(true);
-    // 이후 잡몹 스폰 없음
-    step(b, 5);
-    expect(b.enemies.some((e) => e.role === 'normal')).toBe(false);
-  });
 
   test('엘리트 본체와 분열체를 전부 처치해야 다음 웨이브', () => {
     const b = fresh();
@@ -131,9 +69,9 @@ describe('웨이브: 일반 구간 계속 생성 → 목표 처치 → 잔여 �
     expect(b.waveIndex).toBe(2);
   });
 
-  test('일반 구간 목표 카운트와 부하 잔여 수를 따로 센다', () => {
+  test('일반 구간 시간·처치 수와 부하 잔여 수를 따로 센다(처치 수는 진행 조건 아님)', () => {
     const b = inWave();
-    expect(b.normalProgress()).toEqual({ kills: 0, target: b.chapter.waves[0].normal.killTarget });
+    expect(b.normalClock()).toMatchObject({ kills: 0, duration: 180 });
     expect(b.childrenAlive).toBe(0);
   });
 });
@@ -294,7 +232,7 @@ describe('성장 후보·대체 보상', () => {
 describe('선택창: 호냥이 → 캠프 순서, 선택마다 후보 갱신, 전투 시간 정지', () => {
   test('동시 레벨업은 호냥이부터, 초과 경험치 유지', () => {
     const b = fresh();
-    (b as any).collect({ kind: 'gear', value: 5, x: 0, y: 0, vy: 0, age: 0, lifetime: null, id: 0 });
+    (b as any).collect({ kind: 'gear', value: 10, x: 0, y: 0, vy: 0, age: 0, lifetime: null, id: 0 });
     (b as any).collect({ kind: 'catnip', value: 100, x: 0, y: 0, vy: 0, age: 0, lifetime: null, id: 0 });
     // 캠프가 먼저 들어왔어도 대기 중인 선택은 호냥이가 앞
     const order = b.pending.map((p) => p.track);

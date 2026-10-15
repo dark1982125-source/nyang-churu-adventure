@@ -16,11 +16,20 @@ export function botInput(b: Battle): InputState {
   return { jump: wave || rock || roll || (BOT.intercept && (shot || bat)), ult: b.ultGauge >= 100 ? 0 : null };
 }
 
-/** 봇 옵션: intercept=false면 캠프 조준 투사체·공중 적을 일부러 무시한다(위협 측정용) */
-export const BOT = { intercept: true };
+/** 봇 옵션: intercept=false면 캠프 조준 투사체·공중 적을 일부러 무시한다(위협 측정용). survival=false면 예전 공격형 선택 */
+export const BOT = { intercept: true, survival: true };
+
+/** 생존형 선택(측정용, 11차): 9분 판에서 깎인 HP를 버티도록 회복·방어 패시브를 먼저 챙기는 사람 플레이에 가깝게 */
+const SURVIVAL: string[] = ['hpRegen', 'defense', 'maxHp'];
 
 export function botChoose(b: Battle): void {
   const offers = b.pending[0].offers;
+  if (BOT.survival && b.pending[0].track === 'hero') {
+    const hurt = b.player.hp < b.player.maxHp * 0.6;
+    let s = offers.findIndex((o) => o.kind === 'passive' && SURVIVAL.includes(o.id) && (hurt || o.id === 'hpRegen'));
+    if (s < 0 && hurt) s = offers.findIndex((o) => o.kind === 'filler' && o.id === 'heal');
+    if (s >= 0) { b.choose(s); return; }
+  }
   let idx = offers.findIndex((o) => o.kind === 'exclusive');
   if (idx < 0) idx = offers.findIndex((o) => o.kind === 'basic');
   b.choose(Math.max(0, idx));
@@ -34,7 +43,7 @@ export function runBot(opts: { save?: SaveData; seed?: number; maxTime?: number;
   const dt = 1 / 60;
   let lastX = b.player.x;
   let minXViolation = false;
-  while (!b.finished && b.t < (opts.maxTime ?? 600)) {
+  while (!b.finished && b.t < (opts.maxTime ?? 900)) {
     if (b.paused) { botChoose(b); continue; }
     b.update(dt, (opts.input ?? botInput)(b));
     if (b.player.x < lastX) minXViolation = true;

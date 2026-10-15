@@ -13,7 +13,7 @@ import type { RunResult } from '../src/sim/battle';
 
 const names = (id: CostumeId) => COSTUME_DEFS[id].craft.map((m) => `${MATERIAL_NAMES[m.id]} ${m.count}`);
 const win = (save: SaveData, chapterId: number, rescued: RunResult['rescued'] = null, runId = save.nextRunId++): RunResult => ({
-  runId, chapterId, outcome: 'victory', defeatCause: null, loot: {}, rescued, time: 100, kills: { required: 0, requiredTotal: 0, children: 0 }, heroLevel: 3,
+  runId, chapterId, outcome: 'victory', defeatCause: null, loot: {}, rescued, time: 100, kills: { normal: 0, finale: 0, children: 0 }, heroLevel: 3,
 });
 const materialsFor = (s: SaveData, id: CostumeId) => { for (const m of COSTUME_DEFS[id].craft) s.materials[m.id] = (s.materials[m.id] ?? 0) + m.count; };
 const nabiSave = (): SaveData => { const s = newSave(); s.rescued.push('kosyot', 'kangkang', 'nabi'); syncCostumeUnlocks(s); return s; };

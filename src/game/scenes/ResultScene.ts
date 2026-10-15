@@ -40,7 +40,7 @@ export class ResultScene extends Phaser.Scene {
     text(this, 420, 120, '판 기록', 18, '#ffd9a0');
     text(this, 420, 150, [
       `시간 ${result.time.toFixed(0)}초 · 호냥이 Lv.${result.heroLevel}`,
-      `지정 처치 ${result.kills.required}/${result.kills.requiredTotal} · 분열 처치 ${result.kills.children}`,
+      `처치 ${result.kills.normal + result.kills.finale + result.kills.children} (잡몹 ${result.kills.normal} · 엘리트/보스 ${result.kills.finale} · 분열 ${result.kills.children})`,
       `호냥이를 지나친 적 ${passes} · 화면 밖 이탈 ${oob}`,
       result.outcome === 'victory'
         ? `클리어 자동 회수 ${log.filter((l) => l.type === 'autoCollect' && l.detail === 'victory').reduce((n, l) => n + (l.value ?? 0), 0)}개 · 전환 회수 ${log.filter((l) => l.type === 'autoCollect' && l.detail === 'transition').reduce((n, l) => n + (l.value ?? 0), 0)}개`

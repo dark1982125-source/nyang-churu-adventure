@@ -8,7 +8,7 @@ function result(over: Partial<RunResult> = {}): RunResult {
   return {
     runId: 1, chapterId: 1, outcome: 'victory', defeatCause: null,
     loot: { nyangJelly: 10, softJelly: 3 }, rescued: 'kosyot', time: 100,
-    kills: { required: 37, requiredTotal: 37, children: 3 }, heroLevel: 7, ...over,
+    kills: { normal: 37, finale: 0, children: 3 }, heroLevel: 7, ...over,
   };
 }
 

@@ -404,11 +404,11 @@ describe('캠프 위협 시험 적 A/B (TEMP)', () => {
   test('설정에서 끄면 시험 적이 일반 구간에 나오지 않는다', () => {
     const b = fresh(5, (s) => { s.settings.campThreatTest = false; });
     const kinds = new Set<string>();
-    for (let i = 0; i < 300; i++) kinds.add((b as any).pickNormal(CHAPTER_1.waves[2].normal.pool));
+    for (let i = 0; i < 300; i++) kinds.add((b as any).pickNormal(CHAPTER_1.waves[2].normal.stages[2].pool));
     expect(kinds.has('pebbleRat') || kinds.has('dustBat')).toBe(false);
     const on = fresh(5);
     const k2 = new Set<string>();
-    for (let i = 0; i < 300; i++) k2.add((on as any).pickNormal(CHAPTER_1.waves[2].normal.pool));
+    for (let i = 0; i < 300; i++) k2.add((on as any).pickNormal(CHAPTER_1.waves[2].normal.stages[2].pool));
     expect(k2.has('pebbleRat') && k2.has('dustBat')).toBe(true);
   });
 

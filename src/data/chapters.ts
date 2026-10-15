@@ -2,19 +2,31 @@ import type { EnemyKind } from './enemies';
 import type { CompanionId } from './companions';
 import { TUNING } from '../config/tuning';
 
-/**
- * 일반 구간(확정 구조): 목표 처치 수를 채울 때까지 잡몹이 계속 생성된다.
- * '계속'은 동시 무한 개체가 아니라, 동시 수·간격을 데이터로 제어한다는 뜻(수치 TEMP).
- */
-export interface NormalPhaseDef {
+/** 시간대별 스폰 단계(TEMP). from초부터 다음 단계 전까지 적용 */
+export interface SpawnStage {
+  /** 일반 구간 활성 전투 시간 기준 시작 초 */
+  from: number;
+  /** 무리 생성 간격(초) */
+  interval: number;
+  /** 한 번에 나오는 무리 크기 [최소, 최대] */
+  group: [number, number];
+  /** 동시에 살아 있을 수 있는 잡몹 상한(성능·밀도) */
+  maxAlive: number;
   /** 등장 잡몹과 가중치 */
   pool: { kind: EnemyKind; weight: number }[];
-  /** 지정 처치 수. 달성 즉시 스폰 중단·잔여 잡몹 제거 → 엘리트/보스 */
-  killTarget: number;
-  /** 동시에 살아 있을 수 있는 잡몹 수 */
-  maxAlive: number;
-  /** 스폰 간격(초) */
-  interval: number;
+  /** 체력 배율(뒤 웨이브일수록 성장한 빌드에 맞춘 무리) */
+  hpMul: number;
+}
+
+/**
+ * 일반 구간(11차 확정 방향: 횡스크롤 뱀서류). 처치 수가 아니라 활성 전투 시간으로 끝난다.
+ * 시간 동안 단계별 표에 따라 소수 → 증가 → 무리 압박으로 계속 생성한다.
+ * 활성 시간은 일반 구간 전투가 실제로 흐를 때만 센다(선택창·일시정지·등장 연출·엘리트/보스전·이동 중엔 멈춤).
+ */
+export interface NormalPhaseDef {
+  /** 활성 전투 시간(초). Ch 1 웨이브당 180초는 사용자 동의 첫 테스트 기준(최종 고정 아님) */
+  duration: number;
+  stages: SpawnStage[];
 }
 
 export interface WaveDef {
@@ -26,6 +38,8 @@ export interface WaveDef {
   normal: NormalPhaseDef;
   /** 웨이브 끝 엘리트/보스. 본체와 분열·소환체를 전부 처치해야 다음 웨이브 */
   finale: EnemyKind;
+  /** 엘리트/보스 체력 배율(TEMP, 11차 9분 구성에서 다시 측정). 분열체도 같은 배율 */
+  finaleHpMul?: number;
 }
 
 export interface ChapterDef {
@@ -38,8 +52,9 @@ export interface ChapterDef {
 }
 
 /**
- * Ch 1 말랑 운석 평원. 3웨이브·엘리트 1/엘리트 2/보스 구성과 적 종류는 확정,
- * 목표 처치 수 50/80/100은 CONFIRMED(10차), 동시 수·간격·지점은 TEMP.
+ * Ch 1 말랑 운석 평원. 3웨이브·엘리트 1/엘리트 2/보스 구성과 적 종류는 확정.
+ * 일반 구간 웨이브당 활성 180초(총 540초)는 사용자 동의 첫 테스트 기준(TEST_BASELINE, 최종 고정 아님).
+ * 단계 시점·간격·무리·동시 상한·체력 배율·지점은 전부 TEMP.
  * pebbleRat(캠프 위협 A)·dustBat(B)은 시험 적(TEMP). 설정의 '[시험] 캠프 위협 A/B'를 끄면 풀에서 빠진다.
  */
 export const CHAPTER_1: ChapterDef = {
@@ -49,18 +64,42 @@ export const CHAPTER_1: ChapterDef = {
   waves: [
     {
       triggerX: 700,
-      normal: { pool: [{ kind: 'dustSlime', weight: 3 }, { kind: 'spikyBug', weight: 2 }, { kind: 'pebbleRat', weight: 1 }], killTarget: 50, maxAlive: 6, interval: 0.9 }, // killTarget CONFIRMED 10차, maxAlive·interval TEMP
+      normal: {
+        duration: 180, // TEST_BASELINE 사용자 동의 첫 테스트 기준
+        stages: [ // TEMP
+          { from: 0, interval: 1.6, group: [1, 2], maxAlive: 6, hpMul: 1, pool: [{ kind: 'dustSlime', weight: 3 }, { kind: 'spikyBug', weight: 2 }] },
+          { from: 50, interval: 1.6, group: [2, 3], maxAlive: 9, hpMul: 1, pool: [{ kind: 'dustSlime', weight: 3 }, { kind: 'spikyBug', weight: 2 }, { kind: 'pebbleRat', weight: 1 }] },
+          { from: 120, interval: 1.7, group: [2, 4], maxAlive: 12, hpMul: 1, pool: [{ kind: 'dustSlime', weight: 3 }, { kind: 'spikyBug', weight: 3 }, { kind: 'meteorRat', weight: 1 }, { kind: 'pebbleRat', weight: 1 }] },
+        ],
+      },
       finale: 'rollingRat',
+      finaleHpMul: 1.3, // TEMP 11차 재측정
     },
     {
       triggerX: 1900,
-      normal: { pool: [{ kind: 'spikyBug', weight: 2 }, { kind: 'meteorRat', weight: 2 }, { kind: 'dustSlime', weight: 2 }, { kind: 'pebbleRat', weight: 2 }, { kind: 'dustBat', weight: 2 }], killTarget: 80, maxAlive: 7, interval: 0.8 }, // killTarget CONFIRMED 10차, maxAlive·interval TEMP
+      normal: {
+        duration: 180, // TEST_BASELINE
+        stages: [ // TEMP
+          { from: 0, interval: 1.5, group: [2, 3], maxAlive: 8, hpMul: 1, pool: [{ kind: 'spikyBug', weight: 2 }, { kind: 'meteorRat', weight: 2 }, { kind: 'dustSlime', weight: 2 }, { kind: 'pebbleRat', weight: 1 }] },
+          { from: 50, interval: 1.6, group: [2, 4], maxAlive: 12, hpMul: 1.05, pool: [{ kind: 'spikyBug', weight: 2 }, { kind: 'meteorRat', weight: 2 }, { kind: 'dustSlime', weight: 2 }, { kind: 'pebbleRat', weight: 2 }, { kind: 'dustBat', weight: 2 }] },
+          { from: 120, interval: 1.8, group: [3, 6], maxAlive: 16, hpMul: 1.1, pool: [{ kind: 'spikyBug', weight: 3 }, { kind: 'meteorRat', weight: 2 }, { kind: 'dustSlime', weight: 3 }, { kind: 'pebbleRat', weight: 1 }, { kind: 'dustBat', weight: 2 }] },
+        ],
+      },
       finale: 'kingDustSlime',
+      finaleHpMul: 2.2, // TEMP 11차 재측정
     },
     {
       triggerX: 3100,
-      normal: { pool: [{ kind: 'meteorRat', weight: 3 }, { kind: 'dustSlime', weight: 2 }, { kind: 'spikyBug', weight: 2 }, { kind: 'pebbleRat', weight: 2 }, { kind: 'dustBat', weight: 2 }], killTarget: 100, maxAlive: 8, interval: 0.7 }, // killTarget CONFIRMED 10차, maxAlive·interval TEMP
+      normal: {
+        duration: 180, // TEST_BASELINE
+        stages: [ // TEMP
+          { from: 0, interval: 1.5, group: [2, 3], maxAlive: 10, hpMul: 1.15, pool: [{ kind: 'meteorRat', weight: 3 }, { kind: 'dustSlime', weight: 2 }, { kind: 'spikyBug', weight: 2 }, { kind: 'pebbleRat', weight: 1 }, { kind: 'dustBat', weight: 1 }] },
+          { from: 50, interval: 1.7, group: [3, 5], maxAlive: 16, hpMul: 1.25, pool: [{ kind: 'meteorRat', weight: 3 }, { kind: 'dustSlime', weight: 2 }, { kind: 'spikyBug', weight: 2 }, { kind: 'pebbleRat', weight: 2 }, { kind: 'dustBat', weight: 2 }] },
+          { from: 120, interval: 1.9, group: [5, 8], maxAlive: 24, hpMul: 1.35, pool: [{ kind: 'meteorRat', weight: 4 }, { kind: 'dustSlime', weight: 3 }, { kind: 'spikyBug', weight: 3 }, { kind: 'pebbleRat', weight: 1 }, { kind: 'dustBat', weight: 2 }] },
+        ],
+      },
       finale: 'stompSole',
+      finaleHpMul: 2.5, // TEMP 11차 재측정
     },
   ],
   rescue: { companion: 'kosyot', jailX: 4000 }, // jailX TEMP
@@ -68,21 +107,28 @@ export const CHAPTER_1: ChapterDef = {
 
 export const CHAPTERS: ChapterDef[] = [CHAPTER_1];
 
-/** 지정 처치 수 합계 = 일반 구간 목표 + 엘리트/보스 본체. 분열·소환체는 따로 센다. */
-export function requiredKillCount(ch: ChapterDef): number {
-  return ch.waves.reduce((sum, w) => sum + w.normal.killTarget + 1, 0);
-}
-
 /** 본편 챕터 수(확정) */
 export const MAIN_CHAPTER_COUNT = 15;
 
+/** 일반 구간 활성 시간의 현재 단계 */
+export function stageAt(def: NormalPhaseDef, elapsed: number): SpawnStage {
+  let cur = def.stages[0];
+  for (const st of def.stages) if (elapsed >= st.from) cur = st;
+  return cur;
+}
+
 /**
- * 챕터별 일반 구간 처치 목표 제안(TEMP 증가율 TUNING.waves.killTargetGrowthPerChapter). Ch 1은 확정값 그대로.
- * implemented=false인 챕터는 아직 없는 챕터라 실제 진행·완료 표시에 쓰지 않는다.
+ * 뒤 챕터 시간 기반 설계 제안(TEMP, 처치 목표 증가표를 대체). 일반 구간 시간은 Ch 1 테스트 기준(웨이브당 180초)을 그대로 두고,
+ * 챕터가 뒤로 갈수록 무리 크기·동시 상한·체력 배율을 키우는 방향만 제안한다. implemented=false 챕터는 진행·완료 표시에 쓰지 않는다.
  */
-export function proposedKillTargets(chapter: number): { targets: [number, number, number]; implemented: boolean } {
-  const base = CHAPTER_1.waves.map((w) => w.normal.killTarget);
-  const mul = 1 + TUNING.waves.killTargetGrowthPerChapter * (chapter - 1);
-  const targets = base.map((n) => (chapter === 1 ? n : Math.round((n * mul) / 5) * 5)) as [number, number, number];
-  return { targets, implemented: CHAPTERS.some((c) => c.id === chapter) };
+export function proposedChapterScaling(chapter: number): { normalSeconds: number; groupMul: number; maxAliveMul: number; hpMul: number; implemented: boolean } {
+  const G = TUNING.waves.chapterScaling;
+  const n = chapter - 1;
+  return {
+    normalSeconds: CHAPTER_1.waves[0].normal.duration,
+    groupMul: Math.round((1 + G.group * n) * 100) / 100,
+    maxAliveMul: Math.round((1 + G.maxAlive * n) * 100) / 100,
+    hpMul: Math.round((1 + G.hp * n) * 100) / 100,
+    implemented: CHAPTERS.some((c) => c.id === chapter),
+  };
 }

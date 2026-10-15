@@ -14,7 +14,7 @@ function playUntilConfirm(storage: ReturnType<typeof memoryStorage>, seed = 7): 
   const runId = beginRun(save, 1);
   writeSave(storage, save);
   const b = new Battle({ runId, seed, loadout: buildLoadout(save) });
-  while (!b.clearConfirmed && !b.finished && b.t < 600) {
+  while (!b.clearConfirmed && !b.finished && b.t < 900) {
     if (b.paused) { botChoose(b); continue; }
     b.update(DT, botInput(b));
     recordRunLoot(save, runId, b.loot);
@@ -104,11 +104,31 @@ describe('보스 처치(클리어 확정) 뒤 구출 중 앱 종료', () => {
     expect(save.activeRun!.clearConfirmed).toBeTruthy();
   });
 
+  test('11차 호환: 처치 목표 시절 형식의 확정 저널도 그대로 복귀·정산된다(새 시간제 진행에 영향 없음)', () => {
+    const storage = memoryStorage();
+    const save = loadSave(storage);
+    save.currencies.nyangJelly = 77;
+    const runId = beginRun(save, 1);
+    (save.activeRun as any).clearConfirmed = { rescue: 'kosyot', time: 230, heroLevel: 18, kills: { required: 233, requiredTotal: 233, children: 3 } };
+    writeSave(storage, save);
+    const s = loadSave(storage);
+    expect(s.currencies.nyangJelly).toBeGreaterThanOrEqual(77);
+    expect(pendingClear(s)).toBeTruthy();
+    const done = completePendingClear(s)!;
+    expect(done.result.runId).toBe(runId);
+    expect(done.result.kills).toEqual({ normal: 233, finale: 0, children: 3 });
+    expect(s.rescued).toContain('kosyot');
+    expect(completePendingClear(s)).toBeNull();
+    // 다음 판은 새 시간제 규칙 그대로
+    const b = new Battle({ runId: beginRun(s, 1), seed: 1, loadout: buildLoadout(s) });
+    expect(b.normalClock(0)).toEqual({ elapsed: 0, duration: 180, kills: 0 });
+  });
+
   test('이미 정산된 판의 확정 저널이 남아 있으면 지우기만 한다', () => {
     const save = newSave();
     const runId = beginRun(save, 1);
     save.settledRunIds.push(runId);
-    save.activeRun!.clearConfirmed = { rescue: 'kosyot', time: 1, heroLevel: 1, kills: { required: 0, requiredTotal: 0, children: 0 } };
+    save.activeRun!.clearConfirmed = { rescue: 'kosyot', time: 1, heroLevel: 1, kills: { normal: 0, finale: 0, children: 0 } };
     expect(pendingClear(save)).toBeNull();
     expect(recoverInterruptedRun(save)).toBeNull();
     expect(save.activeRun).toBeNull();

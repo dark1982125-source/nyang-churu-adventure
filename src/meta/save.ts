@@ -1,4 +1,5 @@
 import type { CompanionId } from '../data/companions';
+import type { RunKills } from '../sim/battle';
 import { LEGACY_MATERIAL_IDS, type CurrencyId, type LootId, type MaterialId } from '../data/items';
 import type { UltimateId } from '../data/skills';
 import { NODE_BY_ID } from '../data/progression';
@@ -77,7 +78,7 @@ export interface ActiveRun {
    * 중도 종료로 정산하지 않고 구출 완료 흐름(감옥 개방 → 정체 공개 → 결과)으로 돌아간다. 전투 재개는 없다.
    * 동료·클리어 보상은 감옥을 연 뒤 정산에서만 지급한다.
    */
-  clearConfirmed?: { rescue: CompanionId | null; time: number; heroLevel: number; kills: { required: number; requiredTotal: number; children: number } };
+  clearConfirmed?: { rescue: CompanionId | null; time: number; heroLevel: number; kills: RunKills };
 }
 
 export function newSave(): SaveData {

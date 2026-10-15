@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { Battle, NO_INPUT } from '../src/sim/battle';
 import { buildLoadout, newSave } from '../src/meta/save';
 import { TUNING } from '../src/config/tuning';
-import { runBot, botInput, botChoose } from './bot';
+import { BOT, runBot, botInput, botChoose } from './bot';
 
 const DT = 1 / 60;
 function fresh(seed = 3, mutate?: (s: ReturnType<typeof newSave>) => void) {
@@ -39,35 +39,35 @@ describe('이동 제한', () => {
   });
 });
 
-describe('처치 카운트·웨이브 진행', () => {
-  test('목표 처치 수를 채우기 전에는 다음 웨이브로 넘어가지 않는다', () => {
+describe('처치 카운트·웨이브 진행(11차: 시간제 일반 구간)', () => {
+  test('일반 구간은 처치 수와 무관하게 활성 전투 시간이 다 되기 전에는 엘리트로 넘어가지 않는다', () => {
     const b = fresh();
     const go = { jump: false, ult: null };
-    step(b, 6, go);
-    expect(b.mode).toBe('wave');
-    while (b.enemies.length === 0) step(b, 0.2, go);
+    while (b.mode !== 'wave') step(b, 0.2, go);
+    b.waves[0].normalKills = 10_000; // 처치 수를 아무리 채워도
+    step(b, 5, go);
     expect(b.waveIndex).toBe(0);
-    expect(b.waveRemaining(0)).toBeGreaterThan(0);
+    expect(b.waves[0].phase).toBe('normal');
+    expect(b.normalClock(0).elapsed).toBeGreaterThan(4);
   });
 
-  test('일반 구간 목표 처치 수를 채운 뒤에야 엘리트가 등장한다', () => {
+  test('봇 판: 엘리트는 1웨이브 일반 구간 활성 시간(180초)을 채운 뒤에 등장한다', () => {
     const { battle: b } = runBot({ seed: 1 });
-    const firstElite = b.log.findIndex((l) => l.type === 'eliteSpawn');
-    const killsBefore = b.log.slice(0, firstElite).filter((l) => l.type === 'kill').length;
-    expect(killsBefore).toBeGreaterThanOrEqual(b.chapter.waves[0].normal.killTarget);
-    expect(b.waves[0].normalKills).toBe(b.chapter.waves[0].normal.killTarget);
+    expect(b.log.some((l) => l.type === 'eliteSpawn')).toBe(true);
+    expect(b.waves[0].normalTime).toBe(b.chapter.waves[0].normal.duration);
+    expect(b.chapter.waves[0].normal.duration).toBe(180);
   });
 
-  test('3웨이브를 순서대로 지나 보스 처치 후 클리어, 지정 처치 대상 전부 처치', () => {
+  test('3웨이브를 순서대로 지나 보스 처치 후 클리어, 엘리트 2·보스 1 처치', () => {
     const { battle: b } = runBot({ seed: 2 });
     expect(b.mode).toBe('victory');
-    expect(b.killsRequired).toBe(b.requiredTotal);
+    expect(b.result().kills.finale).toBe(3);
     const order = b.log.filter((l) => ['waveStart', 'waveClear'].includes(l.type)).map((l) => `${l.type}${l.detail}`);
     expect(order).toEqual(['waveStart1', 'waveClear1', 'waveStart2', 'waveClear2', 'waveStart3', 'waveClear3']);
   });
 
   test('왕먼지 슬라임 분열 자식까지 추적하고, 자식이 남으면 웨이브가 끝나지 않는다', () => {
-    const { battle: b } = runBot({ seed: 3 });
+    const { battle: b } = runBot({ seed: 4 });
     const split = b.log.find((l) => l.type === 'split')!;
     expect(split.value).toBe(3);
     expect(b.childrenSpawned).toBe(3);
@@ -239,8 +239,12 @@ describe('다시냥 방울', () => {
   });
 
   test('엘리트 드롭으로 얻고 실제 판에서 부활이 동작한다', () => {
-    const { battle: b } = runBot({ seed: 1, forceBell: true, input: (bb) => ({ ...botInput(bb), jump: false }) });
-    expect(b.log.some((l) => l.type === 'bell')).toBe(true);
+    // 회복을 챙기지 않는 공격형 선택 + 점프 없이 쓰러지는 판에서 방울 부활 확인
+    BOT.survival = false;
+    try {
+      const { battle: b } = runBot({ seed: 2, forceBell: true, input: (bb) => ({ ...botInput(bb), jump: false }) });
+      expect(b.log.some((l) => l.type === 'bell')).toBe(true);
+    } finally { BOT.survival = true; }
   });
 });
 
@@ -324,6 +328,6 @@ describe('밸런스 스모크(TEMP 수치)', () => {
   });
 
   test('판이 무한히 끝나지 않는 일이 없다', () => {
-    for (const seed of [11, 12, 13]) expect(runBot({ seed, maxTime: 400 }).battle.finished).toBe(true);
+    for (const seed of [11, 12, 13]) expect(runBot({ seed, maxTime: 900 }).battle.finished).toBe(true);
   });
 });

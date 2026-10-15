@@ -2,7 +2,6 @@ import { describe, expect, test } from 'vitest';
 import { Battle, NO_INPUT, type Enemy } from '../src/sim/battle';
 import { buildLoadout, newSave } from '../src/meta/save';
 import { TUNING } from '../src/config/tuning';
-import { CHAPTER_1, MAIN_CHAPTER_COUNT, proposedKillTargets, requiredKillCount } from '../src/data/chapters';
 import { botChoose, botInput } from './bot';
 import { measureRun } from './metrics';
 
@@ -130,42 +129,6 @@ describe('엘리트/보스: 함께 접근 → 유효 거리에서 함께 정차 
         expect(w.idle).toBeLessThanOrEqual(0.2);
         expect(w.firstHit).toBeLessThan(3);
       }
-    }
-  });
-});
-
-describe('일반 구간 처치 목표(Ch 1 확정 50/80/100)', () => {
-  test('Ch 1 목표와 지정 처치 합계', () => {
-    expect(CHAPTER_1.waves.map((w) => w.normal.killTarget)).toEqual([50, 80, 100]);
-    expect(requiredKillCount(CHAPTER_1)).toBe(233); // 230 + 엘리트 2 + 보스 1
-    expect(CHAPTER_1.waves.map((w) => w.finale)).toEqual(['rollingRat', 'kingDustSlime', 'stompSole']);
-  });
-
-  test('목표 달성 전까지 계속 생성, 달성 순간 남은 잡몹은 보상 없이 정리되고 엘리트가 나온다', () => {
-    const b = new Battle({ runId: 1, seed: 2, loadout: buildLoadout(newSave()) });
-    while (!(b.waves[0].phase === 'finale')) {
-      if (b.paused) { botChoose(b); continue; }
-      b.update(DT, botInput(b));
-      expect(b.enemies.filter((e) => e.wave === 0 && e.role === 'normal').length).toBeLessThanOrEqual(CHAPTER_1.waves[0].normal.maxAlive);
-      if (b.finished) throw new Error('엘리트 전에 끝남');
-    }
-    expect(b.waves[0].normalKills).toBe(50);
-    expect(b.enemies.some((e) => e.role === 'normal' && e.wave === 0)).toBe(false);
-    while (!b.waves[0].finaleSpawned) { if (b.paused) botChoose(b); else b.update(DT, NO_INPUT); }
-    expect(b.enemies.find((e) => e.role === 'finale')?.def.kind).toBe('rollingRat');
-    expect(b.waves[0].normalKills).toBe(50); // 정리된 잡몹은 처치로 세지 않음
-    expect(b.killsRequired).toBe(50);
-  });
-
-  test('챕터별 증가 제안표(TEMP): Ch 1은 확정값, 뒤 챕터일수록 증가, 미구현 챕터는 구현으로 표시하지 않는다', () => {
-    expect(proposedKillTargets(1)).toEqual({ targets: [50, 80, 100], implemented: true });
-    let prev = 230;
-    for (let ch = 2; ch <= MAIN_CHAPTER_COUNT; ch++) {
-      const p = proposedKillTargets(ch);
-      const sum = p.targets.reduce((a, c) => a + c, 0);
-      expect(sum).toBeGreaterThanOrEqual(prev);
-      expect(p.implemented).toBe(false);
-      prev = sum;
     }
   });
 });

@@ -3,7 +3,7 @@ import type { WeaponId } from '../data/weapons';
 import type { ArmorId } from '../data/armor';
 import type { CompanionId } from '../data/companions';
 import { firstClearArmorBlueprints, firstClearBlueprints, specialClearRewards } from './forge';
-import type { RunResult } from '../sim/battle';
+import { normalizeKills, type RunResult } from '../sim/battle';
 import type { ActiveRun, SaveData } from './save';
 import { syncCostumeUnlocks } from './costume';
 import type { CostumeId } from '../data/costumes';
@@ -130,7 +130,8 @@ export function pendingClearResult(a: ActiveRun & { clearConfirmed: NonNullable<
   const c = a.clearConfirmed;
   return {
     runId: a.runId, chapterId: a.chapterId, outcome: 'victory', defeatCause: null, loot: { ...a.loot },
-    rescued: c.rescue, time: c.time, kills: { ...c.kills }, heroLevel: c.heroLevel,
+    // 처치 목표 시절 저널({ required, requiredTotal, children })도 새 형식으로 읽는다(진행에는 쓰지 않음)
+    rescued: c.rescue, time: c.time, kills: normalizeKills(c.kills), heroLevel: c.heroLevel,
   };
 }
 
@@ -158,6 +159,6 @@ export function recoverInterruptedRun(save: SaveData): SettlementSummary | null 
   }
   return settleRun(save, {
     runId: a.runId, chapterId: a.chapterId, outcome: 'defeat', defeatCause: 'quit', loot: { ...a.loot },
-    rescued: null, time: 0, kills: { required: 0, requiredTotal: 0, children: 0 }, heroLevel: 1,
+    rescued: null, time: 0, kills: { normal: 0, finale: 0, children: 0 }, heroLevel: 1,
   });
 }

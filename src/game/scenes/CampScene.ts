@@ -110,7 +110,7 @@ export class CampScene extends Phaser.Scene {
     text(this, 504, y0 + 12, 'Ch 1 말랑 운석 평원', 20, '#ffd9a0');
     const cleared = s.clearedChapters.includes(1);
     text(this, 504, y0 + 44, cleared ? '구출 완료: 닥터 코숏 · 고난도 Ch 1 해금됨(고난도 미구현)' : '저 멀리 정체를 알 수 없는 감옥이 보입니다.', 14, COLORS.dim);
-    text(this, 504, y0 + 76, '규칙: 오른쪽 전진만 · 대시 없음 · 3웨이브마다 목표 처치 후\n엘리트/보스와 부하 전부 처치 · 보스 열쇠로 감옥을 열어야 클리어', 14);
+    text(this, 504, y0 + 76, '규칙: 오른쪽 전진만 · 대시 없음 · 웨이브마다 일반 구간 3분 버틴 뒤\n엘리트/보스와 부하 전부 처치 · 보스 열쇠로 감옥을 열어야 클리어', 14);
     const pass = s.settings.passPolicy === 'frontBlock' ? '전방 전투' : '점프 통과+후방 레이저(비교 도구)';
     text(this, 504, y0 + 122, `전진: 자동(사거리 안 적과 함께 정차) · 적 통과: ${pass}`, 14, COLORS.warn);
     const w = WEAPON_DEFS[s.equipment.weapon];

@@ -3,7 +3,7 @@ import { Battle, NO_INPUT, type Enemy } from '../src/sim/battle';
 import { buildLoadout, loadSave, memoryStorage, newSave } from '../src/meta/save';
 import { TUNING } from '../src/config/tuning';
 import { heroCampMinGap } from '../src/sim/armorRules';
-import { runBot, botChoose } from './bot';
+import { runBot, botChoose, botInput } from './bot';
 import { measureRun, summarize } from './metrics';
 
 /** 자동전진-교전-후속확정(8차): 자동 전진, 유효 사거리 교전 정차, 밀쳐내기 복귀, 호냥이 대상 공격 전가 없음 */
@@ -64,7 +64,7 @@ describe('자동 전진', () => {
     expect(b.player.x).toBeGreaterThan(x);
   });
 
-  test('경계 떨림 없음: 재개 판정 여유 안에서 적이 조금 밀려나도 정차를 유지한다', () => {
+  test('경계 떨림 없음: 재개 판정 여유 안에서 적이 조금 밀려나도 바로 출발하지 않고, 머물면 다시 다가가 친다(11차)', () => {
     const b = isolated();
     const e = spawn(b, 'dustSlime', 300);
     e.hp = 9999; e.cc = 999; e.ccKind = 'stun';
@@ -72,12 +72,18 @@ describe('자동 전진', () => {
     expect(b.engaged).toBe(true);
     const x = b.player.x;
     e.x += TUNING.advance.resumeMargin * 0.8;
-    step(b, 0.5);
+    step(b, TUNING.advance.marginHold - 0.1);
     expect(b.player.x).toBe(x);
+    // 여유 구간에서 계속 머물면(못 치는 정차) 다시 다가가 사거리 안에서 멈춘다
+    step(b, 1);
+    expect(b.player.x).toBeGreaterThan(x);
+    expect(b.engaged).toBe(true);
+    expect(e.x - e.def.width / 2 - (b.player.x + TUNING.player.width / 2)).toBeLessThanOrEqual(TUNING.basicAttack.range);
+    const x2 = b.player.x;
     // 여유 밖으로 밀려나면 다시 전진해 사거리로 붙는다
     e.x += TUNING.advance.resumeMargin * 3;
     step(b, 1);
-    expect(b.player.x).toBeGreaterThan(x);
+    expect(b.player.x).toBeGreaterThan(x2);
     expect(b.engaged).toBe(true);
   });
 
@@ -119,10 +125,10 @@ describe('자동 전진', () => {
   test('다음 웨이브는 앞 웨이브를 정리한 지점 + 이동 거리, 감옥은 보스 처치 지점 + 거리', () => {
     const b = fresh(1);
     let clearX = -1;
-    while (!b.finished && b.t < 600) {
+    while (!b.finished && b.t < 900) {
       if (b.paused) { botChoose(b); continue; }
       const wi = b.waveIndex;
-      b.update(DT, NO_INPUT);
+      b.update(DT, botInput(b));
       if (b.waveIndex === 1 && wi === 0) clearX = Math.max(b.player.x, b.camp.x + TUNING.camp.followGap);
       if (b.waveIndex === 1 && clearX > 0) break;
     }

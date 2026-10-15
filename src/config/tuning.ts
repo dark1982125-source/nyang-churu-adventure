@@ -57,6 +57,11 @@ export const TUNING = {
   advance: {
     /** 교전 해제(전진 재개) 판정 여유: 사거리 + 이 거리 안에 칠 수 있는 적이 없을 때 재개 */
     resumeMargin: 16, // TEMP
+    /** 11차: 재개 직후 이 시간 동안은 정지 임계값을 사거리 - commitInset으로 당긴다(접근/정지 임계값 분리) */
+    resumeCommit: 0.5, // TEMP
+    commitInset: 40, // TEMP
+    /** 11차: 재개 여유 구간에만 적이 있어 실제로 닿지 않는 정차가 이 시간을 넘으면 다시 다가간다 */
+    marginHold: 0.4, // TEMP (사거리 100 - 40 = 60도 기본 공격이 닿는 거리)
     /** 웨이브 사이 이동 거리(웨이브 정리 지점에서 다음 웨이브 시작까지) */
     travelGap: 360, // TEMP
     /** 마지막 보스 처치 지점에서 감옥까지 */
@@ -92,9 +97,10 @@ export const TUNING = {
 
   growth: {
     /** 호냥이 레벨업 필요 경험치(작은 개다래) */
-    heroXpCurve: (level: number) => 3 + level * 1.5, // TEMP 10차: 3+2L → 3+1.5L(230마리 목표에서 선택 약 15 → 17회)
+    /** 11차: 누적 레벨에 따라 요구량 증가(1차항 + 2차항). 웨이브 사이 경험치 유지, 웨이브별 레벨업 수는 보장하지 않는다 */
+    heroXpCurve: (level: number) => 5 + level * 3 + level * level * 0.1, // TEMP
     /** 캠프 레벨업 필요 경험치(작은 톱니) */
-    campXpCurve: (level: number) => 3 + level * 1.5, // TEMP 10차: 3+2L → 3+1.5L
+    campXpCurve: (level: number) => 5 + level * 3 + level * level * 0.1, // TEMP
     exclusiveSlots: 3, // CONFIRMED 전용 5종 중 최대 3종
     passiveSlotLimit: 5, // CONFIRMED 공통 패시브 최대 5종
     passiveMaxLevel: 5, // CONFIRMED 각 Lv.5, 등급 진화 없음
@@ -258,10 +264,11 @@ export const TUNING = {
     /** 엘리트/보스 등장 위치(호냥이 앞, 화면 안). 10차부터 등장 뒤 호냥이·캠프가 유효 교전 거리까지 함께 다가간다 */
     finaleSpawnAhead: 380, // TEMP
     /**
-     * 챕터별 일반 구간 처치 목표 증가 제안(Ch 1 50/80/100은 CONFIRMED). Ch n = Ch 1 × (1 + 이 값 × (n - 1)), 5 단위 반올림.
-     * 미구현 챕터에는 적용하지 않는 제안표다.
+     * 뒤 챕터 시간 기반 설계 제안(11차: 처치 목표 증가표 대체). 챕터당 증가율. 미구현 챕터에는 적용하지 않는다.
      */
-    killTargetGrowthPerChapter: 0.08, // TEMP
+    chapterScaling: { group: 0.06, maxAlive: 0.04, hp: 0.15 }, // TEMP
+    /** 무리 생성 시 앞뒤로 흩어지는 폭 */
+    groupSpread: 140, // TEMP
     /** 일반 구간 → 엘리트/보스 등장 연출 시간. 이 동안 전투 타이머 전부 정지(확정), 길이는 TEMP */
     finaleIntro: 1.2, // TEMP
     /** 분열 적 세대 상한. 무한 분열 방지용 기술적 장치 */

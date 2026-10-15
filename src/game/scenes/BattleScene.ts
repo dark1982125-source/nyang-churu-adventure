@@ -460,7 +460,7 @@ export class BattleScene extends Phaser.Scene {
     else if (e.slow > 0) this.t(x, y - d.height - 22, '감속', 11, '#bfe0ff');
     if (d.temp) this.t(x, y + 12, '시험', 9, '#ffd0a0');
     if (d.rank !== 'normal' || e.hp < d.hp) {
-      this.bar(g, x - d.width / 2, y - d.height - 12, d.width, 5, e.hp / d.hp, d.rank === 'boss' ? 0xff6b6b : 0xffb86b);
+      this.bar(g, x - d.width / 2, y - d.height - 12, d.width, 5, e.hp / e.maxHp, d.rank === 'boss' ? 0xff6b6b : 0xffb86b);
     }
     if (d.rank !== 'normal') this.t(x, y - d.height - 26, d.name, 12, d.rank === 'boss' ? '#ffb3b3' : '#ffe0b3');
     if (!e.required) this.t(x, y + 10, '분열', 10, '#e0dbff');
@@ -480,13 +480,14 @@ export class BattleScene extends Phaser.Scene {
     // 궁극기 게이지(해금 시)
     if (b.loadout.ultimateEnabled) this.bar(h, 404, 32, 140, 14, b.ultGauge / TUNING.ultimate.gaugeMax, 0xffd34d);
 
-    // 확정: 일반 구간만 '처치 k/목표'. 엘리트·보스 구간의 분열·소환체 잔여 수는 표시하지 않는다(내부 판정만).
+    // 11차: 일반 구간은 남은 활성 시간과 처치 수(목표 아님). 엘리트·보스 구간의 분열·소환체 잔여 수는 표시하지 않는다(내부 판정만).
     let w: string;
     if (b.mode === 'wave') {
       const rt = b.waves[b.waveIndex];
       if (rt.phase === 'normal') {
-        const np = b.normalProgress();
-        w = `웨이브 ${b.waveIndex + 1}/3 · 처치 ${np.kills}/${np.target}`;
+        const c = b.normalClock();
+        const left = Math.max(0, Math.ceil(c.duration - c.elapsed));
+        w = `웨이브 ${b.waveIndex + 1}/3 · 남은 ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} · 처치 ${c.kills}`;
       } else {
         const boss = b.enemies.find((e) => e.role === 'finale');
         const finale = b.chapter.waves[b.waveIndex].finale;

@@ -67,7 +67,7 @@ describe('일반 구간 → 엘리트/보스 전환 (§2)', () => {
     b.mode = 'wave';
     b.rightLimit = b.player.x;
     (b as any).spawnEnemy('dustSlime', 0, true, b.player.x + 300);
-    b.waves[0].normalKills = CHAPTER_1.waves[0].normal.killTarget;
+    b.waves[0].normalTime = CHAPTER_1.waves[0].normal.duration - 1e-4; // 다음 틱에 활성 시간 종료
     return b;
   };
 
