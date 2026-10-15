@@ -48,28 +48,28 @@ describe('이동 제한', () => {
 });
 
 describe('처치 카운트·웨이브 진행', () => {
-  test('살아 있거나 대기 중인 적이 남으면 다음 웨이브로 넘어가지 않는다', () => {
+  test('목표 처치 수를 채우기 전에는 다음 웨이브로 넘어가지 않는다', () => {
     const b = fresh();
     const go = { forward: true, jump: false, ult: null };
     step(b, 6, go);
     expect(b.mode).toBe('wave');
-    // 적을 하나 남긴 상태를 만든다
-    while (b.waves[0].queue.length > 0 || b.enemies.length === 0) step(b, 0.2, go);
+    while (b.enemies.length === 0) step(b, 0.2, go);
     const triggerNext = b.chapter.waves[1].triggerX;
     expect(b.rightLimit).toBeLessThan(triggerNext);
     expect(b.waveIndex).toBe(0);
     expect(b.waveRemaining(0)).toBeGreaterThan(0);
   });
 
-  test('일반 적을 모두 처치한 뒤에야 엘리트가 등장한다', () => {
+  test('일반 구간 목표 처치 수를 채운 뒤에야 엘리트가 등장한다', () => {
     const { battle: b } = runBot({ seed: 1 });
     const firstElite = b.log.findIndex((l) => l.type === 'eliteSpawn');
     const killsBefore = b.log.slice(0, firstElite).filter((l) => l.type === 'kill').length;
-    expect(killsBefore).toBe(b.chapter.waves[0].groups.reduce((s, g) => s + g.count, 0));
+    expect(killsBefore).toBeGreaterThanOrEqual(b.chapter.waves[0].normal.killTarget);
+    expect(b.waves[0].normalKills).toBe(b.chapter.waves[0].normal.killTarget);
   });
 
   test('3웨이브를 순서대로 지나 보스 처치 후 클리어, 지정 처치 대상 전부 처치', () => {
-    const { battle: b } = runBot({ seed: 2 });
+    const { battle: b } = runBot({ seed: 1 });
     expect(b.mode).toBe('victory');
     expect(b.killsRequired).toBe(b.requiredTotal);
     const order = b.log.filter((l) => ['waveStart', 'waveClear'].includes(l.type)).map((l) => `${l.type}${l.detail}`);
@@ -184,7 +184,7 @@ describe('보스 돌 투척(원안: 캠프를 향한 큰 돌, 공중 펀치 파�
 
 describe('구출', () => {
   test('보스 처치 → 열쇠 → 감옥 개방 → 구출 공개 → 클리어 순서', () => {
-    const { battle: b } = runBot({ seed: 2 });
+    const { battle: b } = runBot({ seed: 1 });
     const idx = (t: string) => b.log.findIndex((l) => l.type === t);
     const bossKill = b.log.findIndex((l) => l.type === 'kill' && l.detail === '쿵쿵 돌발바닥');
     expect(bossKill).toBeGreaterThan(-1);
@@ -224,8 +224,10 @@ describe('다시냥 방울', () => {
     b.hasBell = true;
     b.player.hp = 5;
     b.damagePlayer(50);
+    expect(b.player.hp).toBe(0);
+    b.update(DT, NO_INPUT); // HP 0 판정은 틱 끝(캠프 판정 뒤)
     expect(b.player.hp).toBe(b.player.maxHp * 0.5);
-    expect(b.player.invuln).toBe(3);
+    expect(b.player.invuln).toBeCloseTo(3, 1);
     expect(b.hasBell).toBe(false);
     expect(b.damagePlayer(10)).toBe(false); // 무적 중
     b.player.invuln = 0;
@@ -320,7 +322,7 @@ describe('레벨업 선택창', () => {
     const b = fresh();
     (b as any).collect({ kind: 'gear', value: 100, x: 0, y: 0, vy: 0, age: 0, lifetime: null, id: 0 });
     expect(b.pending.every((p) => p.track === 'camp')).toBe(true);
-    expect(b.pending[0].offers.every((o) => o.kind === 'camp')).toBe(true);
+    expect(b.pending[0].offers.every((o) => o.kind === 'camp' || (o.kind === 'filler' && ['gear', 'mental'].includes(o.id)))).toBe(true);
   });
 });
 

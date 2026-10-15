@@ -51,7 +51,7 @@ export const WEAPON_DEFS: Record<WeaponId, WeaponCraftDef> = {
   },
   fishboneSword: {
     id: 'fishboneSword', name: '생선뼈 검', kind: 'sword', basicAttack: '전방 부채꼴 베기', baseAttack: 20,
-    craft: [{ id: 'fishSpine', count: 10 }, { id: 'smallStone', count: 5 }, { id: 'oldYarn', count: 3 }],
+    craft: [{ id: 'fishboneShard', count: 10 }, { id: 'smallStone', count: 5 }, { id: 'oldYarn', count: 3 }],
     enhanceMaterial: 'smoothStone',
     special5: [{ id: 'hardFishbone', count: 1 }],
     special10: [{ id: 'shinyFishbone', count: 1 }],

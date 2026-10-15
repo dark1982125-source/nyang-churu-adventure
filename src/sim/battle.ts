@@ -6,7 +6,7 @@ import { COMPANIONS, type CompanionId } from '../data/companions';
 import { GLOVE, ULTIMATES, type CampSkillId, type ExclusiveSkillDef, type PassiveId, type UltimateId, type WeaponDef } from '../data/skills';
 import type { Loadout } from '../meta/save';
 import {
-  campOffers, heroOffers, type Offer, type PendingChoice, type RunSkills,
+  campOffers, heroOffers, type FillerOffer, type Offer, type PendingChoice, type RunSkills,
 } from './choices';
 import { Rng } from './rng';
 
@@ -27,7 +27,7 @@ export interface InputState {
 export const NO_INPUT: InputState = { forward: false, jump: false, ult: null };
 
 export type Mode = 'travel' | 'wave' | 'toJail' | 'opening' | 'revealed' | 'victory' | 'defeat';
-export type DefeatCause = 'hero' | 'camp';
+export type DefeatCause = 'hero' | 'camp' | 'quit';
 /** 피해 구분 태그. 회피·치명타는 direct에만 적용, 지속 피해(dot)는 제외 */
 export type DamageKind = 'direct' | 'dot';
 /** 호냥이 공격 출처. 공격력/스킬 피해 패시브 적용 범위가 다르다 */
@@ -41,8 +41,10 @@ export interface Enemy {
   vy: number;
   hp: number;
   wave: number;
-  /** 지정 처치 대상(웨이브 데이터에 있는 적). 분열 자식은 false */
+  /** 지정 처치 대상(일반 구간 잡몹·엘리트/보스 본체). 분열·소환체는 false */
   required: boolean;
+  /** normal: 일반 구간 잡몹, finale: 엘리트/보스 본체, minion: 분열·소환체 */
+  role: 'normal' | 'finale' | 'minion';
   parentId: number | null;
   generation: number;
   contactCd: number;
@@ -105,7 +107,7 @@ export interface LogEntry {
   type:
     | 'waveStart' | 'waveClear' | 'eliteSpawn' | 'kill' | 'split' | 'pass' | 'outOfBounds' | 'missedPickup'
     | 'levelUp' | 'campLevelUp' | 'skill' | 'ult' | 'revive' | 'bell' | 'key' | 'jailOpen' | 'victory' | 'defeat'
-    | 'evade' | 'crit' | 'rockBroken' | 'rockHitCamp' | 'loot';
+    | 'evade' | 'crit' | 'rockBroken' | 'rockHitCamp' | 'loot' | 'cleanup' | 'quit' | 'filler';
   detail?: string;
   value?: number;
 }
@@ -120,13 +122,18 @@ interface ScheduledHit {
   stun: number;
 }
 
-interface WaveRuntime {
+export interface WaveRuntime {
   started: boolean;
   cleared: boolean;
-  queue: { kind: EnemyKind; delay: number }[];
+  /** normal: 잡몹 계속 생성, finale: 엘리트/보스 구간 */
+  phase: 'normal' | 'finale';
+  /** 일반 구간 처치 수(목표 카운트) */
+  normalKills: number;
   spawnTimer: number;
   finaleSpawned: boolean;
   finaleId: number | null;
+  /** 목표 달성 후 처치·보상 없이 제거한 잔여 잡몹 수 */
+  cleanedUp: number;
 }
 
 export interface RunResult {
@@ -238,11 +245,9 @@ export class Battle {
     this.camp.x = this.player.x - TUNING.camp.followGap;
     this.requiredTotal = requiredKillCount(this.chapter);
 
-    this.waves = this.chapter.waves.map((w) => {
-      const queue: { kind: EnemyKind; delay: number }[] = [];
-      for (const g of w.groups) for (let i = 0; i < g.count; i++) queue.push({ kind: g.kind, delay: g.interval });
-      return { started: false, cleared: false, queue, spawnTimer: 0.6, finaleSpawned: false, finaleId: null };
-    });
+    this.waves = this.chapter.waves.map(() => ({
+      started: false, cleared: false, phase: 'normal' as const, normalKills: 0, spawnTimer: 0.6, finaleSpawned: false, finaleId: null, cleanedUp: 0,
+    }));
     this.rightLimit = this.chapter.waves[0].triggerX;
 
     if (this.chapter.rescue) {
@@ -285,13 +290,22 @@ export class Battle {
 
   /** 남은 지정 처치 대상(스폰 대기 포함) */
   get requiredRemaining(): number { return this.requiredTotal - this.killsRequired; }
-  /** 살아 있는 분열 자식 수. 처치 수 UI 집계 정책이 미정이라 따로 보여 준다. */
-  get childrenAlive(): number { return this.enemies.filter((e) => !e.required).length; }
+  /** 살아 있는 분열·소환체 수(엘리트/보스 부하 잔여). 표시 형식은 미정. */
+  get childrenAlive(): number { return this.enemies.filter((e) => e.role === 'minion').length; }
 
+  /** 현재 웨이브 일반 구간 목표 카운트 */
+  normalProgress(i = this.waveIndex): { kills: number; target: number } {
+    const def = this.chapter.waves[Math.min(i, 2)];
+    return { kills: this.waves[Math.min(i, 2)].normalKills, target: def.normal.killTarget };
+  }
+
+  /** 웨이브를 끝내려면 남은 처치 수(일반 구간 목표 잔여 + 본체 + 살아 있는 부하) */
   waveRemaining(i: number): number {
     const w = this.waves[i];
-    const alive = this.enemies.filter((e) => e.wave === i).length;
-    return w.queue.length + (w.finaleSpawned ? 0 : 1) + alive;
+    const def = this.chapter.waves[i];
+    const normalLeft = Math.max(0, def.normal.killTarget - w.normalKills);
+    const finaleAlive = this.enemies.filter((e) => e.wave === i && e.role !== 'normal').length;
+    return normalLeft + (w.finaleSpawned ? 0 : 1) + finaleAlive;
   }
 
   result(): RunResult {
@@ -310,12 +324,38 @@ export class Battle {
 
   // ───────────────────────── 선택창
 
+  /**
+   * 선택 대기열. 확정: 호냥이 선택부터, 그다음 캠프. 후보는 그 선택 차례가 올 때 현재 보유·레벨로 만든다.
+   * 대기열이 비면 전투 재개. 선택 중에는 update()가 아무것도 진행하지 않아 전투 시간 전체가 멈춘다.
+   */
   choose(index: number): void {
     const p = this.pending[0];
     if (!p) return;
     const o = p.offers[Math.max(0, Math.min(index, p.offers.length - 1))];
     this.applyOffer(o);
     this.pending.shift();
+    this.activateNextChoice();
+  }
+
+  private queueChoice(track: 'hero' | 'camp'): void {
+    this.pending.push({ track, offers: [] });
+    // 현재 열린 선택창은 그대로 두고, 대기 중인 것만 호냥이 → 캠프 순으로 정렬
+    const [head, ...rest] = this.pending;
+    if (head.offers.length > 0) {
+      rest.sort((a, b) => (a.track === b.track ? 0 : a.track === 'hero' ? -1 : 1));
+      this.pending = [head, ...rest];
+    } else {
+      this.pending.sort((a, b) => (a.track === b.track ? 0 : a.track === 'hero' ? -1 : 1));
+      this.activateNextChoice();
+    }
+  }
+
+  private activateNextChoice(): void {
+    const p = this.pending[0];
+    if (!p || p.offers.length > 0) return;
+    p.offers = p.track === 'hero'
+      ? heroOffers(this.skills, this.weapon, this.luck, this.rng)
+      : campOffers(this.skills, this.availableCampSkills(), this.rng);
   }
 
   private applyOffer(o: Offer): void {
@@ -335,16 +375,26 @@ export class Battle {
         if (o.id === 'maxHp') { this.player.maxHp += P.maxHp; this.player.hp += P.maxHp; }
         if (o.id === 'maxEnergy') { this.player.maxEnergy += P.maxEnergy; this.player.energy += P.maxEnergy; }
         break;
-      case 'heal': this.player.hp = Math.min(this.player.maxHp, this.player.hp + 25); break;
-      case 'camp':
-        s.camp[o.id] = o.nextLevel;
-        if (o.id === 'repair') this.camp.mental = Math.min(this.camp.maxMental, this.camp.mental + TUNING.supports.campRepair);
-        break;
+      case 'filler': this.applyFiller(o.id); break;
+      case 'camp': s.camp[o.id] = o.nextLevel; break;
     }
   }
 
+  /** 대체 보상 즉시 적용. 상한을 넘지 않는다. 재화는 판 획득물로 들어가 정산된다. */
+  private applyFiller(id: FillerOffer['id']): void {
+    const F = TUNING.fillers;
+    const p = this.player;
+    if (id === 'jelly') this.loot.nyangJelly = (this.loot.nyangJelly ?? 0) + F.heroJelly;
+    else if (id === 'heal') p.hp = Math.min(p.maxHp, p.hp + F.heroHeal);
+    else if (id === 'energy') p.energy = Math.min(p.maxEnergy, p.energy + F.heroEnergy);
+    else if (id === 'gear') this.loot.golgolGear = (this.loot.golgolGear ?? 0) + F.campGear;
+    else this.camp.mental = Math.min(this.camp.maxMental, this.camp.mental + F.campMental);
+    this.logEvent('filler', id);
+  }
+
   private availableCampSkills(): CampSkillId[] {
-    const list: CampSkillId[] = ['barrier', 'laser', 'repair'];
+    // 처음부터 동행하는 지원 동료 + 구출해 합류한 전투 지원 동료. 슬롯 제한 없음.
+    const list: CampSkillId[] = ['barrier', 'laser'];
     // 구출한 동료만 다음 출격부터 지원. 미래 동료는 활성화하지 않는다.
     if (this.loadout.rescued.includes('kosyot')) list.push('capsule');
     return list;
@@ -405,10 +455,11 @@ export class Battle {
     if (wantMove) {
       let nx = p.x + TUNING.player.moveSpeed * dt;
       nx = Math.min(nx, this.rightLimit);
-      // 지상에서는 적에게 막힌다(통과 불가)
+      // 적에게 막힌다. 확정 규칙(frontBlock)에서는 점프 중에도 적을 뛰어넘어 뒤에 남기지 않는다.
+      // 비교 도구(jumpPass)에서만 공중에서 넘어갈 수 있다.
       for (const e of this.enemies) {
         if (e.passed || e.x < p.x) continue;
-        if (!this.verticalOverlap(e)) continue;
+        if (this.passPolicy === 'jumpPass' && !this.verticalOverlap(e)) continue;
         nx = Math.min(nx, e.x - (TUNING.player.width + e.def.width) / 2);
       }
       // 오른쪽 전진만 허용: 어떤 경우에도 x는 줄어들지 않는다.
@@ -430,16 +481,12 @@ export class Battle {
     return this.enemies.some((e) => !e.passed && e.x > this.player.x && e.x - e.def.width / 2 - this.player.x < dist);
   }
 
-  private updateCamp(dt: number): void {
+  /** 확정: 호냥이와 캠프는 함께 움직이고 함께 멈추며 일정 간격을 유지한다(간격 수치 TEMP). 캠프는 지상. */
+  private updateCamp(_dt: number): void {
     const c = this.camp;
     const target = this.player.x - TUNING.camp.followGap;
-    // 캠프는 웨이브 전투 중 정차, 그 외에는 오른쪽으로 전진
-    if (this.mode !== 'wave' && c.x < target) {
-      c.x = Math.min(target, c.x + TUNING.camp.moveSpeed * dt);
-      c.moving = true;
-    } else {
-      c.moving = false;
-    }
+    c.moving = target > c.x + 0.01;
+    c.x = Math.max(c.x, target);
   }
 
   // ───────────────────────── 웨이브
@@ -453,28 +500,55 @@ export class Battle {
 
     const i = this.waveIndex;
     const w = this.waves[i];
-    const aliveNow = this.enemies.length;
-    if (w.queue.length > 0) {
-      w.spawnTimer -= dt;
-      if (w.spawnTimer <= 0 && aliveNow < TUNING.waves.maxAlive) {
-        const next = w.queue.shift()!;
-        this.spawnEnemy(next.kind, i, true);
-        w.spawnTimer = next.delay;
+    const def = this.chapter.waves[i];
+    if (w.phase === 'normal') {
+      if (w.normalKills >= def.normal.killTarget) {
+        this.endNormalPhase(i);
+      } else {
+        // 목표 처치 수를 채울 때까지 잡몹 계속 생성. 동시 수·간격으로 제어(TEMP)
+        w.spawnTimer -= dt;
+        const alive = this.enemies.filter((e) => e.wave === i && e.role === 'normal').length;
+        if (w.spawnTimer <= 0 && alive < def.normal.maxAlive) {
+          this.spawnEnemy(this.pickNormal(def.normal.pool), i, true);
+          w.spawnTimer = def.normal.interval;
+        }
       }
-    } else if (!w.finaleSpawned) {
-      // 일반 적을 모두 처치하면 엘리트/보스 등장
-      if (!this.enemies.some((e) => e.wave === i)) {
-        const kind = this.chapter.waves[i].finale;
-        const e = this.spawnEnemy(kind, i, true);
-        w.finaleSpawned = true;
-        w.finaleId = e.id;
-        this.logEvent('eliteSpawn', e.def.name);
-        this.banner(`${e.def.rank === 'boss' ? '보스' : '엘리트'} 등장! ${e.def.name}`, 2.2);
-      }
+      return;
+    }
+    if (!w.finaleSpawned) {
+      const e = this.spawnEnemy(def.finale, i, true);
+      e.role = 'finale';
+      w.finaleSpawned = true;
+      w.finaleId = e.id;
+      this.logEvent('eliteSpawn', e.def.name);
+      this.banner(`${e.def.rank === 'boss' ? '보스' : '엘리트'} 등장! ${e.def.name}`, 2.2);
     } else if (!this.enemies.some((e) => e.wave === i)) {
-      // 엘리트/보스와 그 분열 자식까지 전부 처치해야 웨이브 종료
+      // 엘리트/보스 본체와 분열·소환체까지 전부 처치해야 웨이브 종료
       this.clearWave();
     }
+  }
+
+  private pickNormal(pool: { kind: EnemyKind; weight: number }[]): EnemyKind {
+    const total = pool.reduce((s, p) => s + p.weight, 0);
+    let r = this.rng.next() * total;
+    for (const p of pool) { r -= p.weight; if (r < 0) return p.kind; }
+    return pool[pool.length - 1].kind;
+  }
+
+  /**
+   * 목표 처치 수 달성: 잡몹 스폰 중단, 남은 잡몹은 필드에서 제거(처치 수·드롭·경험치 없음).
+   * 이미 떨어진 드롭·장판·투사체를 함께 지울지는 미정이라 건드리지 않는다.
+   */
+  private endNormalPhase(i: number): void {
+    const w = this.waves[i];
+    const leftovers = this.enemies.filter((e) => e.wave === i && e.role === 'normal');
+    for (const e of leftovers) {
+      this.addEffect({ kind: 'hit', x1: e.x - 16, x2: e.x + 16, y1: e.y, y2: e.y + 32, ttl: 0.35, color: 0xdfd6ff });
+    }
+    this.enemies = this.enemies.filter((e) => !leftovers.includes(e));
+    w.cleanedUp = leftovers.length;
+    w.phase = 'finale';
+    this.logEvent('cleanup', `${i + 1}`, leftovers.length);
   }
 
   private startWave(): void {
@@ -512,6 +586,7 @@ export class Battle {
     const e: Enemy = {
       id: this.nextId++, def, x: spawnX, y: 0, vy: 0, hp: def.hp, wave, required,
       parentId: parent?.id ?? null, generation: parent ? parent.generation + 1 : 0,
+      role: parent ? 'minion' : 'normal',
       contactCd: 0, stun: 0, passed: false, state: 'walk', stateTimer: 0,
       cdA: 2, cdB: 3.5, rollTarget: 0, hopTimer: this.rng.range(0.5, 1.5), flash: 0,
     };
@@ -832,7 +907,11 @@ export class Battle {
 
   private killEnemy(e: Enemy): void {
     this.enemies = this.enemies.filter((x) => x !== e);
-    if (e.required) this.killsRequired++;
+    if (e.role === 'normal') {
+      const w = this.waves[e.wave];
+      // 같은 순간 여러 마리가 죽어도 목표 카운트는 목표치까지만 센다(초과분은 처치 기록·드롭만)
+      if (w.phase === 'normal' && w.normalKills < this.chapter.waves[e.wave].normal.killTarget) { w.normalKills++; this.killsRequired++; }
+    } else if (e.role === 'finale') this.killsRequired++;
     else this.childrenKilled++;
     this.logEvent('kill', e.def.name, e.required ? 1 : 0);
 
@@ -995,7 +1074,7 @@ export class Battle {
           this.heroXp -= this.heroXpNeeded;
           this.heroLevel++;
           this.logEvent('levelUp', `${this.heroLevel}`);
-          this.pending.push({ track: 'hero', offers: heroOffers(this.skills, this.weapon, this.luck, this.rng) });
+          this.queueChoice('hero');
         }
         break;
       case 'gear':
@@ -1004,7 +1083,7 @@ export class Battle {
           this.campXp -= this.campXpNeeded;
           this.campLevel++;
           this.logEvent('campLevelUp', `${this.campLevel}`);
-          this.pending.push({ track: 'camp', offers: campOffers(this.skills, this.availableCampSkills(), this.rng) });
+          this.queueChoice('camp');
         }
         break;
       case 'loot':
@@ -1040,7 +1119,7 @@ export class Battle {
    */
   damagePlayer(n: number, kind: DamageKind = 'direct'): boolean {
     const p = this.player;
-    if (p.invuln > 0 || this.finished) return false;
+    if (p.invuln > 0 || this.finished || p.hp <= 0) return false;
     const st = this.stats();
     if (kind === 'direct' && st.evasion > 0 && this.rng.chance(st.evasion)) {
       this.logEvent('evade');
@@ -1050,15 +1129,8 @@ export class Battle {
     p.hp -= n * st.damageTaken;
     p.invuln = TUNING.player.contactInvuln;
     p.hurt = 0.25;
-    if (p.hp <= 0 && this.hasBell && this.revivesUsed < TUNING.revive.perRun) {
-      // 다시냥 방울: HP 0에서 자동 소모, 최대 HP 50%로 부활, 3초 무적
-      this.hasBell = false;
-      this.revivesUsed++;
-      p.hp = p.maxHp * TUNING.revive.hpRatio;
-      p.invuln = TUNING.revive.invuln;
-      this.logEvent('revive');
-      this.banner('다시냥 방울! 부활!', 1.8);
-    }
+    // HP 0 처리(방울 부활 포함)는 이 틱 끝 resolveDefeat()에서 캠프 판정 뒤에 한다
+    if (p.hp <= 0) p.hp = 0;
     return true;
   }
 
@@ -1070,13 +1142,42 @@ export class Battle {
       left -= absorbed;
     }
     this.camp.mental -= left;
+    // 캠프 파괴는 그 순간 패배(호냥이 HP·방울 무관)
+    if (this.camp.mental <= 0 && !this.finished) this.checkDefeat();
   }
 
+  /**
+   * 확정: 캠프 멘탈 0이면 호냥이 HP·방울과 무관하게 즉시 패배. 같은 틱에 둘 다 0이어도 캠프 우선, 방울 미발동.
+   * 캠프가 멀쩡할 때만 호냥이 HP 0에 다시냥 방울(HP 50%, 3초 무적, 판당 1회)을 쓴다.
+   */
   private checkDefeat(): void {
     if (this.finished) return;
-    // 미정: 동시 패배 판정 우선순위. 지금은 캠프 파괴를 먼저 본다(방울은 캠프에 적용되지 않음).
     if (this.camp.mental <= 0) { this.camp.mental = 0; this.defeatCause = 'camp'; this.finish('defeat'); return; }
-    if (this.player.hp <= 0) { this.player.hp = 0; this.defeatCause = 'hero'; this.finish('defeat'); }
+    const p = this.player;
+    if (p.hp > 0) return;
+    if (this.hasBell && this.revivesUsed < TUNING.revive.perRun) {
+      this.hasBell = false;
+      this.revivesUsed++;
+      p.hp = p.maxHp * TUNING.revive.hpRatio;
+      p.invuln = TUNING.revive.invuln;
+      this.logEvent('revive');
+      this.banner('다시냥 방울! 부활!', 1.8);
+      return;
+    }
+    p.hp = 0;
+    this.defeatCause = 'hero';
+    this.finish('defeat');
+  }
+
+  /**
+   * 판 도중 나가기(앱 종료 포함). 이미 주운 영구 재화·재료만 남기고 패배와 같은 정산 대상으로 끝낸다.
+   * 임시 성장·미사용 방울은 사라지고 신규 구출·클리어 보상은 없다. 이어하기 없음.
+   */
+  quit(): void {
+    if (this.finished) return;
+    this.defeatCause = 'quit';
+    this.logEvent('quit');
+    this.finish('defeat');
   }
 
   private checkJail(): void {

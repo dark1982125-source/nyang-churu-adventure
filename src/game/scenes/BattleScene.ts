@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { Battle, type Enemy, type InputState } from '../../sim/battle';
 import { offerLabel } from '../../sim/choices';
 import { buildLoadout } from '../../meta/save';
-import { issueRunId, settleRun } from '../../meta/settlement';
+import { beginRun, recordRunLoot, settleRun } from '../../meta/settlement';
 import { TUNING } from '../../config/tuning';
 import { PASSIVES, ULTIMATES, type PassiveId } from '../../data/skills';
 import { BOSS_PATTERNS } from '../../data/enemies';
@@ -33,14 +33,16 @@ export class BattleScene extends Phaser.Scene {
   private logCursor = 0;
   private settled = false;
   private hudTexts: Record<string, Phaser.GameObjects.Text> = {};
+  private quitConfirm: Phaser.GameObjects.Container | null = null;
 
   constructor() { super('battle'); }
 
   create(): void {
     const save = store.save;
-    // 판 id를 출격 즉시 발급·저장해 같은 판이 두 번 정산되지 않게 한다
-    const runId = issueRunId(save);
+    // 판 id 발급과 판 저널을 출격 즉시 저장한다. 앱이 도중에 꺼지면 다음 실행 때 저널로 중도 종료 정산.
+    const runId = beginRun(save, 1);
     store.persist();
+    this.quitConfirm = null;
     this.battle = new Battle({ runId, seed: (Date.now() ^ (runId * 2654435761)) >>> 0, loadout: buildLoadout(save) });
     this.settled = false;
     this.logCursor = 0;
@@ -62,6 +64,33 @@ export class BattleScene extends Phaser.Scene {
     this.hudTexts.note = text(this, 180, H - 34, '', 11, '#3d3852').setDepth(11);
 
     this.makeTouchControls();
+    button(this, W / 2 - 50, 8, 100, 30, '나가기', () => this.askQuit(), { size: 13, color: 0x4a3b5c });
+    // 탭 전환·앱 종료 직전에도 저널을 한 번 더 저장(이 이벤트에만 의존하지 않는다)
+    const flush = () => { if (!this.settled) { recordRunLoot(store.save, this.battle.runId, this.battle.loot); store.persist(); } };
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', flush);
+    this.events.once('shutdown', () => {
+      window.removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', flush);
+    });
+  }
+
+  /** 판 도중 나가기 확인. 확인창이 떠 있는 동안 전투 시간은 멈춘다. */
+  private askQuit(): void {
+    if (this.quitConfirm || this.battle.finished) return;
+    const items: Phaser.GameObjects.GameObject[] = [
+      this.add.rectangle(0, 0, W, H, 0x120f1c, 0.75).setOrigin(0).setInteractive(),
+      text(this, W / 2, 150, '판을 나갈까요?', 26, '#ffd9a0').setOrigin(0.5, 0),
+      text(this, W / 2, 200, '지금까지 주운 재화·제작 재료는 보존됩니다.\n레벨·기술·패시브·다시냥 방울은 사라지고, 구출·클리어 보상은 없습니다.\n이어하기 없이 다음 출격은 웨이브 1부터입니다.', 16).setOrigin(0.5, 0).setAlign('center'),
+      button(this, W / 2 - 230, 320, 210, 56, '나가기', () => { this.battle.quit(); this.closeQuit(); }, { size: 18, color: 0x7a3b3b }),
+      button(this, W / 2 + 20, 320, 210, 56, '계속하기', () => this.closeQuit(), { size: 18, color: 0x5b4f86 }),
+    ];
+    this.quitConfirm = this.add.container(0, 0, items).setDepth(40);
+  }
+
+  private closeQuit(): void {
+    this.quitConfirm?.destroy();
+    this.quitConfirm = null;
   }
 
   private makeTouchControls(): void {
@@ -98,7 +127,10 @@ export class BattleScene extends Phaser.Scene {
 
   update(_time: number, deltaMs: number): void {
     const b = this.battle;
-    if (b.paused) {
+    if (Phaser.Input.Keyboard.JustDown(this.keys.ESC)) { if (this.quitConfirm) this.closeQuit(); else this.askQuit(); }
+    if (this.quitConfirm) {
+      // 확인창 동안 전투 정지
+    } else if (b.paused) {
       this.showChoice();
     } else {
       if (this.choiceLayer) { this.choiceLayer.destroy(); this.choiceLayer = null; this.choiceShownFor = null; }
@@ -118,6 +150,7 @@ export class BattleScene extends Phaser.Scene {
 
   private playSounds(): void {
     const log = this.battle.log;
+    let lootChanged = false;
     for (; this.logCursor < log.length; this.logCursor++) {
       const l = log[this.logCursor];
       const map: Partial<Record<typeof l.type, Parameters<typeof sound.play>[0]>> = {
@@ -127,6 +160,12 @@ export class BattleScene extends Phaser.Scene {
       };
       const s = map[l.type];
       if (s) sound.play(s);
+      if (l.type === 'loot' || l.type === 'filler') lootChanged = true;
+    }
+    // 주운 영구 재화·재료는 그때그때 판 저널에 저장(갑작스러운 종료 대비)
+    if (lootChanged && !this.settled) {
+      recordRunLoot(store.save, this.battle.runId, this.battle.loot);
+      store.persist();
     }
   }
 
@@ -376,15 +415,22 @@ export class BattleScene extends Phaser.Scene {
     // 궁극기 게이지(해금 시)
     if (b.loadout.ultimateEnabled) this.bar(h, 404, 32, 140, 14, b.ultGauge / TUNING.ultimate.gaugeMax, 0xffd34d);
 
-    const w = b.mode === 'wave' ? `웨이브 ${b.waveIndex + 1}/3 진행 중` : b.waveIndex >= 3 ? '감옥으로!' : `웨이브 ${b.waveIndex + 1}/3 접근 중`;
-    const kids = b.childrenAlive > 0 ? ` (+분열 ${b.childrenAlive})` : '';
-    this.hudTexts.top.setText(
-      `HP ${Math.ceil(b.player.hp)}/${b.player.maxHp}${b.hasBell ? ' 🔔' : ''}  Lv.${b.heroLevel}` +
-      `            냥기력 ${Math.floor(b.player.energy)}` +
-      (b.loadout.ultimateEnabled ? `          궁극기 ${Math.floor(b.ultGauge)}%` : '          궁극기 미해금'),
-    );
+    // 일반 구간 목표 카운트와 엘리트/보스 부하 잔여 수를 따로 보여 준다(표시 형식은 미정·TEMP)
+    let w: string;
+    if (b.mode === 'wave') {
+      const rt = b.waves[b.waveIndex];
+      if (rt.phase === 'normal') {
+        const np = b.normalProgress();
+        w = `웨이브 ${b.waveIndex + 1}/3 · 처치 ${np.kills}/${np.target}`;
+      } else {
+        const boss = b.enemies.find((e) => e.role === 'finale');
+        w = `웨이브 ${b.waveIndex + 1}/3 · ${boss ? `${boss.def.rank === 'boss' ? '보스' : '엘리트'} 전투` : '정리 중'}${b.childrenAlive > 0 ? ` · 부하 ${b.childrenAlive}` : ''}`;
+      }
+    } else {
+      w = b.waveIndex >= 3 ? '감옥으로!' : `웨이브 ${b.waveIndex + 1}/3 접근 중`;
+    }
     const jelly = b.loot.nyangJelly ?? 0;
-    this.hudTexts.right.setText(`${w}\n남은 적 ${b.requiredRemaining}${kids} · 냥젤리 +${jelly}`);
+    this.hudTexts.right.setText(`${w}\n주운 냥젤리 ${jelly}`);
     const banner = b.effects.find((e) => e.kind === 'banner');
     this.hudTexts.banner.setText(banner?.text ?? '').setAlpha(banner ? Math.min(1, banner.ttl * 2) : 0);
     const skills = b.skills.exclusives.map((s) => {

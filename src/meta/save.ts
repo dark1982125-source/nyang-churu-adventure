@@ -1,5 +1,5 @@
 import type { CompanionId } from '../data/companions';
-import type { CurrencyId, MaterialId } from '../data/items';
+import { LEGACY_MATERIAL_IDS, type CurrencyId, type LootId, type MaterialId } from '../data/items';
 import type { UltimateId } from '../data/skills';
 import { NODE_BY_ID } from '../data/progression';
 import { TUNING, type AdvanceMode, type PassPolicy } from '../config/tuning';
@@ -30,7 +30,12 @@ export interface SaveData {
   /** 중복 정산 방지: 이미 정산한 판 id */
   settledRunIds: number[];
   nextRunId: number;
-  stats: { runs: number; clears: number; defeats: number };
+  stats: { runs: number; clears: number; defeats: number; quits: number };
+  /**
+   * 진행 중인 판의 저널. 출격 즉시 기록하고, 영구 재화·재료를 주울 때마다 갱신·저장한다.
+   * 정상 종료 정산과 같은 저장 쓰기에서 지워진다. 앱이 도중에 꺼져 남아 있으면 다음 실행 때 중도 종료로 정산한다.
+   */
+  activeRun: { runId: number; chapterId: number; loot: Partial<Record<LootId, number>> } | null;
   settings: { advanceMode: AdvanceMode; passPolicy: PassPolicy; bgmVolume: number; sfxVolume: number };
 }
 
@@ -50,7 +55,8 @@ export function newSave(): SaveData {
     equippedUltimates: [],
     settledRunIds: [],
     nextRunId: 1,
-    stats: { runs: 0, clears: 0, defeats: 0 },
+    stats: { runs: 0, clears: 0, defeats: 0, quits: 0 },
+    activeRun: null,
     settings: { advanceMode: TUNING.defaultAdvanceMode, passPolicy: TUNING.defaultPassPolicy, bgmVolume: 0.6, sfxVolume: 0.8 },
   };
 }
@@ -92,11 +98,18 @@ export function loadSave(storage: SaveStorage): SaveData {
   if (!raw) return base;
   try {
     const parsed = JSON.parse(raw) as Partial<SaveData>;
+    const materials: Record<string, number> = { ...parsed.materials };
+    for (const [oldId, newId] of Object.entries(LEGACY_MATERIAL_IDS)) {
+      if (materials[oldId] !== undefined) {
+        materials[newId] = (materials[newId] ?? 0) + materials[oldId];
+        delete materials[oldId];
+      }
+    }
     return {
       ...base,
       ...parsed,
       currencies: { ...base.currencies, ...parsed.currencies },
-      materials: { ...parsed.materials },
+      materials: materials as SaveData['materials'],
       weapons: { ...base.weapons, ...parsed.weapons },
       equipment: { ...base.equipment, ...parsed.equipment },
       flags: { ...base.flags, ...parsed.flags },

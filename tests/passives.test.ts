@@ -46,7 +46,8 @@ describe('공통 패시브 14종 · 최대 5종 · 각 Lv.5', () => {
     s.exclusives = ['udada', 'uppercut', 'straight'].map((id) => ({ id: id as any, grade: 'legend' as const, level: 1 }));
     for (const id of ALL.slice(0, 5)) s.passives[id] = 5;
     const offers = heroOffers(s, GLOVE, 0, new Rng(1));
-    expect(offers.every((o) => o.kind === 'heal')).toBe(true);
+    expect(offers.every((o) => o.kind === 'filler')).toBe(true);
+    expect(new Set(offers.map((o) => (o.kind === 'filler' ? o.id : ''))).size).toBe(3);
   });
 
   test('판 안 패시브는 다음 판으로 이어지지 않는다', () => {

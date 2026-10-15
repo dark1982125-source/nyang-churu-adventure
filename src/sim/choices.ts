@@ -12,13 +12,18 @@ export interface RunSkills {
   camp: Partial<Record<CampSkillId, number>>;
 }
 
+/** 대체 보상: 후보가 부족한 칸만 채운다. 종류 확정(호냥이 3종·캠프 2종), 양 TEMP. 슬롯 없음·즉시 적용. */
+export type HeroFillerId = 'jelly' | 'heal' | 'energy';
+export type CampFillerId = 'gear' | 'mental';
+export type FillerOffer = { kind: 'filler'; id: HeroFillerId | CampFillerId };
+
 export type HeroOffer =
   | { kind: 'basic'; nextLevel: number }
   | { kind: 'exclusive'; id: ExclusiveSkillId; isNew: boolean; grade: Grade; level: number }
   | { kind: 'passive'; id: PassiveId; nextLevel: number }
-  | { kind: 'heal' };
+  | FillerOffer;
 
-export type CampOffer = { kind: 'camp'; id: CampSkillId; nextLevel: number };
+export type CampOffer = { kind: 'camp'; id: CampSkillId; nextLevel: number } | FillerOffer;
 
 export type Offer = HeroOffer | CampOffer;
 
@@ -88,21 +93,39 @@ export function heroOffers(skills: RunSkills, weapon: WeaponDef, luck: number, r
   }
 
   rng.shuffle(pool);
-  const picked = pool.slice(0, 3);
-  while (picked.length < 3) picked.push({ kind: 'heal' });
+  const picked: HeroOffer[] = pool.slice(0, 3);
+  // 성장 후보를 먼저 채우고, 부족한 칸만 대체 보상(서로 다른 종류)
+  const fillers = rng.shuffle<HeroFillerId>(['jelly', 'heal', 'energy']);
+  for (let k = 0; picked.length < 3; k++) picked.push({ kind: 'filler', id: fillers[k] });
   return picked;
 }
 
+/**
+ * 캠프 후보: 합류한 지원 동료 전부(슬롯 제한 없음), 각 판 안 Lv.5까지. 최대면 제외.
+ * 부족한 칸만 골골기어/캠프 멘탈 회복 두 종류로 채운다.
+ * TEMP: 두 종류로 세 칸을 채우는 정책이 미정이라 같은 종류를 두 번 보여 주지 않는다(카드가 2장이 될 수 있음).
+ */
 export function campOffers(skills: RunSkills, available: CampSkillId[], rng: Rng): CampOffer[] {
   const pool: CampOffer[] = [];
   for (const id of available) {
     const lvl = skills.camp[id] ?? 0;
-    if (id !== 'repair' && lvl >= TUNING.growth.campSkillMaxLevel) continue;
+    if (lvl >= TUNING.growth.campSkillMaxLevel) continue;
     pool.push({ kind: 'camp', id, nextLevel: lvl + 1 });
   }
   rng.shuffle(pool);
-  return pool.slice(0, 3);
+  const picked = pool.slice(0, 3);
+  const fillers = rng.shuffle<CampFillerId>(['gear', 'mental']);
+  for (let k = 0; picked.length < 3 && k < fillers.length; k++) picked.push({ kind: 'filler', id: fillers[k] });
+  return picked;
 }
+
+export const FILLER_LABELS: Record<HeroFillerId | CampFillerId, { title: string; detail: () => string }> = {
+  jelly: { title: '냥젤리', detail: () => `냥젤리 +${TUNING.fillers.heroJelly} (판 획득물, TEMP 양)` },
+  heal: { title: '츄르 한 입', detail: () => `HP ${TUNING.fillers.heroHeal} 즉시 회복 (TEMP 양)` },
+  energy: { title: '기운 충전', detail: () => `냥기력 ${TUNING.fillers.heroEnergy} 즉시 회복 (TEMP 양)` },
+  gear: { title: '골골기어', detail: () => `골골기어 +${TUNING.fillers.campGear} (판 획득물, TEMP 양)` },
+  mental: { title: '캠프 멘탈 회복', detail: () => `캠프 멘탈 ${TUNING.fillers.campMental} 즉시 회복 (TEMP 양)` },
+};
 
 export function offerLabel(o: Offer, weapon: WeaponDef): { title: string; detail: string } {
   const gradeName = (g: Grade) => (g === 'normal' ? '일반' : g === 'unique' ? '유니크' : '전설');
@@ -116,9 +139,9 @@ export function offerLabel(o: Offer, weapon: WeaponDef): { title: string; detail
     }
     case 'passive':
       return { title: `${PASSIVES[o.id].name} Lv.${o.nextLevel}/${TUNING.growth.passiveMaxLevel}`, detail: `${PASSIVES[o.id].desc}${o.nextLevel === 1 ? ' (NEW, 공통 패시브)' : ''}` };
-    case 'heal':
-      return { title: '츄르 한 입', detail: 'HP 25 회복 (모든 후보가 최대일 때 대체 보상, 미정·TEMP)' };
+    case 'filler':
+      return { title: `${FILLER_LABELS[o.id].title} (대체 보상)`, detail: `${FILLER_LABELS[o.id].detail()} · 슬롯 없이 즉시 적용` };
     case 'camp':
-      return { title: `${CAMP_SKILLS[o.id].name}${o.id === 'repair' ? '' : ` Lv.${o.nextLevel}`}`, detail: CAMP_SKILLS[o.id].desc };
+      return { title: `${CAMP_SKILLS[o.id].name} Lv.${o.nextLevel}/${TUNING.growth.campSkillMaxLevel}`, detail: CAMP_SKILLS[o.id].desc };
   }
 }

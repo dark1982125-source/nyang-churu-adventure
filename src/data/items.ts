@@ -11,7 +11,7 @@ export const MATERIAL_NAMES = {
   glossyLeather: '윤기나는 가죽',
   goldenFurball: '황금빛 털뭉치',
   // 검
-  fishSpine: '생선가시조각',
+  fishboneShard: '생선가시조각',
   smallStone: '작은 돌조각',
   smoothStone: '매끈한 돌조각',
   hardFishbone: '단단한 생선뼈',
@@ -50,6 +50,9 @@ export const MATERIAL_NAMES = {
 } as const;
 
 export type MaterialId = keyof typeof MATERIAL_NAMES;
+
+/** 예전 저장 ID → 현재 ID. 이름을 정식명(생선가시조각)에 맞춰 바꾼 ID를 저장 불러오기에서 옮긴다. */
+export const LEGACY_MATERIAL_IDS: Record<string, MaterialId> = { fishSpine: 'fishboneShard' };
 
 export const CURRENCY_NAMES: Record<CurrencyId, string> = {
   nyangJelly: '냥젤리',

@@ -15,9 +15,9 @@ export class ResultScene extends Phaser.Scene {
     const win = result.outcome === 'victory';
     this.cameras.main.setBackgroundColor(win ? 0x2d3b4f : 0x3a2533);
 
-    text(this, 40, 30, win ? 'Ch 1 클리어!' : '패배…', 34, win ? '#ffe08a' : '#ffb3b3');
-    const cause = result.defeatCause === 'camp' ? '캠프 멘탈이 바닥났습니다.' : result.defeatCause === 'hero' ? '호냥이가 쓰러졌습니다.' : '';
-    if (!win) text(this, 40, 78, `${cause} 획득한 재화·재료는 보존되고, 새 동료 구출은 확정되지 않았습니다.`, 15, COLORS.dim);
+    text(this, 40, 30, win ? 'Ch 1 클리어!' : result.defeatCause === 'quit' ? '중도 종료' : '패배…', 34, win ? '#ffe08a' : '#ffb3b3');
+    const cause = result.defeatCause === 'camp' ? '캠프 멘탈이 바닥났습니다.' : result.defeatCause === 'hero' ? '호냥이가 쓰러졌습니다.' : '판을 나갔습니다.';
+    if (!win) text(this, 40, 78, `${cause} 주운 재화·재료는 보존되고, 새 동료 구출은 확정되지 않았습니다.`, 15, COLORS.dim);
     if (summary.newlyRescued) {
       const name = COMPANIONS[summary.newlyRescued as CompanionId].name;
       text(this, 40, 78, `${name} 정식 합류! 다음 출격부터 캣닢 캡슐 지원과 캠프 선택지가 열립니다.`, 16, '#bff7ff');

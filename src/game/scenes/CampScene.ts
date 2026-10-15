@@ -36,6 +36,10 @@ export class CampScene extends Phaser.Scene {
       ? '[미리보기 전용 저장] 깡깡이 구출·재료 보유 상태로 시작합니다. 실제 저장과 분리되며 새로고침하면 사라집니다.'
       : '임시 표시물 빌드 — 아트·음악은 아직 제공되지 않아 도형·합성음으로 대신합니다.', 13, store.preview ? COLORS.warn : COLORS.dim);
 
+    if (store.recovered?.applied && this.tab === 'main') {
+      const n = Object.values(store.recovered.loot).reduce((a, b) => a + (b ?? 0), 0);
+      text(this, 470, 84, `지난 판이 중간에 끝나 주운 재화·재료 ${n}개만 정산했습니다.`, 13, COLORS.warn);
+    }
     // 영구 재화
     const cur = (Object.keys(CURRENCY_NAMES) as CurrencyId[]).map((id) => `${CURRENCY_NAMES[id]} ${s.currencies[id]}`).join('   ');
     text(this, 24, 84, cur, 18, '#ffe7b8');
@@ -76,8 +80,8 @@ export class CampScene extends Phaser.Scene {
     const cleared = s.clearedChapters.includes(1);
     text(this, 504, y0 + 44, cleared ? '구출 완료: 닥터 코숏 · 고난도 Ch 1 해금됨(고난도 미구현)' : '저 멀리 정체를 알 수 없는 감옥이 보입니다.', 14, COLORS.dim);
     text(this, 504, y0 + 76, '규칙: 오른쪽 전진만 · 대시 없음 · 3웨이브 지정 적 전부 처치\n보스 열쇠로 감옥을 열어야 클리어', 14);
-    const mode = s.settings.advanceMode === 'hold' ? '누르는 동안 전진(시험)' : '자동 전진(비교용)';
-    const pass = s.settings.passPolicy === 'frontBlock' ? '전방 전투(시험)' : '점프 통과+후방 레이저(비교용)';
+    const mode = s.settings.advanceMode === 'hold' ? '누르는 동안 전진' : '자동 전진(비교 도구)';
+    const pass = s.settings.passPolicy === 'frontBlock' ? '전방 전투' : '점프 통과+후방 레이저(비교 도구)';
     text(this, 504, y0 + 122, `전진: ${mode} · 적 통과: ${pass}`, 14, COLORS.warn);
     const w = WEAPON_DEFS[s.equipment.weapon];
     text(this, 504, y0 + 142, `무기: ${w.name} +${s.weapons[w.id]?.level ?? 0}`, 13, COLORS.dim);
@@ -130,19 +134,19 @@ export class CampScene extends Phaser.Scene {
 
   private drawSettings(): void {
     const s = store.save;
-    text(this, 24, 172, '전진 방식 (미정 — 검토용 임시 옵션)', 18, '#ffd9a0');
-    button(this, 24, 204, 300, 44, `전진 입력 중에만 이동${s.settings.advanceMode === 'hold' ? ' ✔' : ''}`, () => {
+    text(this, 24, 172, '전진 방식 — 확정: 누르는 동안 전진. 자동 전진은 비교용 개발 도구', 18, '#ffd9a0');
+    button(this, 24, 204, 300, 44, `누르는 동안 전진, 놓으면 정지${s.settings.advanceMode === 'hold' ? ' ✔' : ''}`, () => {
       s.settings.advanceMode = 'hold'; store.persist(); this.scene.restart({ tab: 'settings' });
     }, { size: 14 });
-    button(this, 340, 204, 300, 44, `자동 전진, 적 앞에서 정지${s.settings.advanceMode === 'auto' ? ' ✔' : ''}`, () => {
+    button(this, 340, 204, 300, 44, `[비교] 자동 전진, 적 앞에서 정지${s.settings.advanceMode === 'auto' ? ' ✔' : ''}`, () => {
       s.settings.advanceMode = 'auto'; store.persist(); this.scene.restart({ tab: 'settings' });
     }, { size: 14 });
 
-    text(this, 24, 262, '적 통과 처리 (미정 — 추천 시험안은 전방 전투)', 18, '#ffd9a0');
-    button(this, 24, 294, 300, 44, `전방 전투: 적이 앞에서 막힘${s.settings.passPolicy === 'frontBlock' ? ' ✔' : ''}`, () => {
+    text(this, 24, 262, '적 통과 — 확정: 전방 전투. 점프 통과는 비교용 개발 도구', 18, '#ffd9a0');
+    button(this, 24, 294, 300, 44, `전방 전투: 서로 넘어가지 않음${s.settings.passPolicy === 'frontBlock' ? ' ✔' : ''}`, () => {
       s.settings.passPolicy = 'frontBlock'; store.persist(); this.scene.restart({ tab: 'settings' });
     }, { size: 14 });
-    button(this, 340, 294, 300, 44, `점프 통과 + 후방 레이저(비교)${s.settings.passPolicy === 'jumpPass' ? ' ✔' : ''}`, () => {
+    button(this, 340, 294, 300, 44, `[비교] 점프 통과 + 후방 레이저${s.settings.passPolicy === 'jumpPass' ? ' ✔' : ''}`, () => {
       s.settings.passPolicy = 'jumpPass'; store.persist(); this.scene.restart({ tab: 'settings' });
     }, { size: 14 });
 

@@ -1,4 +1,5 @@
 import { loadSave, localStorageAdapter, memoryStorage, newSave, writeSave, type SaveData, type SaveStorage } from '../meta/save';
+import { recoverInterruptedRun, type SettlementSummary } from '../meta/settlement';
 
 /**
  * 검토용 미리보기: 주소 끝에 ?preview=forge 를 붙이면 깡깡이 구출·재료 보유 상태의 임시 저장으로 시작한다.
@@ -20,17 +21,24 @@ function forgePreviewSave(): SaveData {
   s.currencies.nyangJelly = 120;
   s.materials = {
     softJelly: 12, wornLeather: 6, oldYarn: 7, hardJelly: 250, glossyLeather: 1, goldenFurball: 1,
-    fishSpine: 10, smallStone: 5, smoothStone: 40,
+    fishboneShard: 10, smallStone: 5, smoothStone: 40,
   };
   return s;
 }
 
 const storage: SaveStorage = previewMode === 'forge' ? memoryStorage() : localStorageAdapter;
 
+const initialSave = previewMode === 'forge' ? forgePreviewSave() : loadSave(storage);
+// 지난 판이 앱 종료 등으로 정산되지 않았다면 주운 것만 중도 종료로 정산하고 캠프에서 시작한다
+const recovered = recoverInterruptedRun(initialSave);
+if (recovered) writeSave(storage, initialSave);
+
 /** 화면 사이에서 공유하는 영구 저장 상태 */
 export const store = {
   preview: previewMode === 'forge' ? 'forge' as const : null,
-  save: (previewMode === 'forge' ? forgePreviewSave() : loadSave(storage)) as SaveData,
+  save: initialSave as SaveData,
+  /** 이번 실행에서 복구 정산한 중도 종료 판(캠프 화면 안내용) */
+  recovered: recovered as SettlementSummary | null,
   persist(): void { writeSave(storage, this.save); },
   reset(): void {
     storage.clear();

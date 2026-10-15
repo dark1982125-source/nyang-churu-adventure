@@ -102,13 +102,15 @@ export const PASSIVES: Record<PassiveId, { name: string; desc: string }> = {
   cooldown: { name: '스킬 쿨타임 감소', desc: '무기 전용 스킬 쿨타임만' },
 };
 
-/** 캠프 선택창 후보(캠프 경험치). 캠프 스킬 등급/행운 적용은 미정이라 단순 레벨만 둔다. */
-export type CampSkillId = 'barrier' | 'laser' | 'capsule' | 'repair';
+/**
+ * 캠프 선택창 후보(캠프 경험치). 합류한 전투 지원 동료 전부 기본 활성·슬롯 제한 없음, 각 판 안 Lv.5.
+ * 전투 지원이 없는 동료(깡깡이·나비)에게는 기술을 만들지 않는다. 등급/행운 적용은 미정.
+ */
+export type CampSkillId = 'barrier' | 'laser' | 'capsule';
 export const CAMP_SKILLS: Record<CampSkillId, { name: string; desc: string; companion: string | null }> = {
   barrier: { name: '골골송 배리어 강화', desc: '수염할아버지 배리어 보호량·주기 강화', companion: 'grandpa' },
   laser: { name: '서치 레이저 강화', desc: '삐콩이 레이저 피해·주기 강화', companion: 'pikong' },
   capsule: { name: '캣닢 캡슐 강화', desc: '코숏 캡슐 회복량·주기 강화', companion: 'kosyot' },
-  repair: { name: '응급 보수', desc: '캠프 멘탈 즉시 회복 (반복 선택 가능)', companion: null },
 };
 
 /**

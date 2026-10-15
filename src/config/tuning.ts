@@ -6,25 +6,23 @@
  * `CONFIRMED` 주석으로 따로 표시한다.
  */
 
-/** 미정 정책의 임시 선택지. 기획에서 확정되면 이 값을 고정하고 나머지 분기를 지운다. */
+/** 전진 방식. 확정 규칙은 hold. auto는 비교용 개발 도구로만 남긴다. */
 export type AdvanceMode =
-  /** TEMP: 전진 입력을 누르는 동안만 오른쪽 이동, 입력이 없으면 정지 */
+  /** CONFIRMED: 입력 중 오른쪽 전진, 놓으면 정지 */
   | 'hold'
-  /** TEMP: 자동으로 오른쪽 전진, 전방에 적이 있으면 정지 */
+  /** 비교 도구: 자동으로 오른쪽 전진, 전방에 적이 있으면 정지 */
   | 'auto';
 
-/** 미정: 적이 호냥이를 지나쳤을 때의 처리. 비교용 임시 선택지. */
+/** 적·호냥이 상호 통과 처리. 확정 규칙은 frontBlock. jumpPass는 비교용 개발 도구로만 남긴다. */
 export type PassPolicy =
-  /** TEMP 추천 테스트안: 적은 호냥이 중심을 넘어 뒤로 가지 못한다(점프 중이면 밀려남) */
+  /** CONFIRMED: 점프 중에도 적과 호냥이가 서로 넘어가 뒤에 남지 않는다 */
   | 'frontBlock'
-  /** TEMP 이전 안: 점프 중에는 아래로 지나갈 수 있고, 삐콩이 레이저가 뒤쪽 적을 우선 조준 */
+  /** 비교 도구(이전 안): 점프 중 서로 지나갈 수 있고, 삐콩이 레이저가 뒤쪽 적을 우선 조준 */
   | 'jumpPass';
 
 export const TUNING = {
-  /** 미정: 자동/수동 전진. 캠프 화면 설정에서 바꿀 수 있는 검토용 옵션. */
-  defaultAdvanceMode: 'hold' as AdvanceMode,
-  /** 미정: 지나간 적 처리. 캠프 화면 설정에서 비교 가능. */
-  defaultPassPolicy: 'frontBlock' as PassPolicy,
+  defaultAdvanceMode: 'hold' as AdvanceMode, // CONFIRMED
+  defaultPassPolicy: 'frontBlock' as PassPolicy, // CONFIRMED
 
   world: {
     gravity: 1500, // TEMP
@@ -54,8 +52,8 @@ export const TUNING = {
     interval: 0.45, // TEMP
     range: 70, // TEMP
     damage: 10, // TEMP
-    /** 미정: 기본 공격 최대 레벨 */
-    maxLevel: 5, // TEMP
+    /** Lv.1 시작, 최대 Lv.5, 등급 진화 없음 */
+    maxLevel: 5, // CONFIRMED
     damagePerLevel: 0.2, // TEMP 레벨당 +20%
     intervalPerLevel: 0.04, // TEMP 레벨당 주기 감소
   },
@@ -87,7 +85,7 @@ export const TUNING = {
     exclusiveSlots: 3, // CONFIRMED 전용 5종 중 최대 3종
     passiveSlotLimit: 5, // CONFIRMED 공통 패시브 최대 5종
     passiveMaxLevel: 5, // CONFIRMED 각 Lv.5, 등급 진화 없음
-    campSkillMaxLevel: 5, // TEMP 미정: 캠프 스킬 등급 체계
+    campSkillMaxLevel: 5, // CONFIRMED 각 지원 판 안 임시 강화 최대 Lv.5 (영구 진화는 별도)
     /** 등급별 피해 배율. 일반 Lv1~3, 유니크 Lv1~3, 전설 */
     gradeDamage: { normal: [1.0, 1.25, 1.5], unique: [1.9, 2.2, 2.5], legend: [3.2] }, // TEMP
     gradeCooldown: { normal: [1.0, 0.95, 0.9], unique: [0.85, 0.8, 0.75], legend: [0.65] }, // TEMP
@@ -140,10 +138,8 @@ export const TUNING = {
   },
 
   waves: {
-    /** 동시에 살아 있는 적 최대 수 */
-    maxAlive: 9, // TEMP
-    /** 웨이브 시작 지점에서 전방 전투 구역 끝까지 */
-    arenaLength: 200, // TEMP
+    /** 웨이브 시작 지점에서 더 전진할 수 있는 거리. 확정: 웨이브 중 호냥이·캠프 함께 정차 → 0 */
+    arenaLength: 0,
     /** 전투 구역 끝에서 적 스폰 지점까지(화면 밖 전방) */
     spawnAhead: 600, // TEMP
     /** 분열 적 세대 상한. 무한 분열 방지용 기술적 장치 */
@@ -154,7 +150,18 @@ export const TUNING = {
     barrier: { interval: 12, shield: 25, levelShield: 10, levelInterval: 1 }, // TEMP 수염할아버지 골골송 배리어
     laser: { interval: 3.2, damage: 22, levelDamage: 8, levelInterval: 0.3 }, // TEMP 삐콩이 서치 레이저
     capsule: { interval: 14, heal: 20, levelHeal: 6, levelInterval: 1.5, lifetime: 9, dropAhead: 170 }, // TEMP 코숏 캣닢 캡슐
-    campRepair: 30, // TEMP 캠프 선택지 '응급 보수' 즉시 회복량
+  },
+
+  /**
+   * 후보가 부족한 칸만 채우는 대체 보상. 종류는 확정(호냥이 3종, 캠프 2종), 양은 TEMP.
+   * 슬롯을 쓰지 않고 즉시 적용된다.
+   */
+  fillers: {
+    heroJelly: 5, // TEMP 냥젤리(판 획득물로 정산)
+    heroHeal: 30, // TEMP HP 즉시 회복
+    heroEnergy: 40, // TEMP 냥기력 즉시 회복
+    campGear: 1, // TEMP 골골기어(판 획득물로 정산)
+    campMental: 25, // TEMP 캠프 멘탈 즉시 회복
   },
 } as const;
 

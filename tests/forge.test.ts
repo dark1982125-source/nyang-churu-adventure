@@ -65,16 +65,16 @@ describe('제작', () => {
     expect(WEAPON_DEFS.churuLauncher.craft.map((m) => m.count)).toEqual([10, 5, 5, 3]);
   });
 
-  test('생선뼈 검: 생선 등뼈 10·작은 돌 5·낡은 털실 3, 강화 매끈한 돌', () => {
+  test('생선뼈 검: 생선가시조각 10·작은 돌조각 5·낡은 털실뭉치 3, 강화 매끈한 돌조각', () => {
     const d = WEAPON_DEFS.fishboneSword;
-    expect(d.craft).toEqual([{ id: 'fishSpine', count: 10 }, { id: 'smallStone', count: 5 }, { id: 'oldYarn', count: 3 }]);
+    expect(d.craft).toEqual([{ id: 'fishboneShard', count: 10 }, { id: 'smallStone', count: 5 }, { id: 'oldYarn', count: 3 }]);
     expect(d.enhanceMaterial).toBe('smoothStone');
   });
 
   test('전투 동작이 없는 무기는 제작해도 장착되지 않는다', () => {
     const s = withKangkang();
     visitForge(s);
-    s.materials = { fishSpine: 10, smallStone: 5, oldYarn: 3 };
+    s.materials = { fishboneShard: 10, smallStone: 5, oldYarn: 3 };
     expect(craftWeapon(s, 'fishboneSword')).toBe('ok');
     expect(equipWeapon(s, 'fishboneSword')).toBe('notCombatReady');
     expect(s.equipment.weapon).toBe('starterGlove');

@@ -27,6 +27,7 @@ export function settleRun(save: SaveData, result: RunResult): SettlementSummary 
   const summary: SettlementSummary = { applied: false, duplicate: false, newlyRescued: null, firstClear: false, loot: result.loot, blueprints: [], specials: [] };
   if (save.settledRunIds.includes(result.runId)) {
     summary.duplicate = true;
+    if (save.activeRun?.runId === result.runId) save.activeRun = null;
     return summary;
   }
 
@@ -58,10 +59,14 @@ export function settleRun(save: SaveData, result: RunResult): SettlementSummary 
     }
     // 챕터 일반 완료 시 해당 고난도 해금(고난도 자체는 미구현)
     if (!save.hardUnlocked.includes(result.chapterId)) save.hardUnlocked.push(result.chapterId);
+  } else if (result.defeatCause === 'quit') {
+    save.stats.quits++;
   } else {
     save.stats.defeats++;
   }
 
+  // 정산과 저널 삭제를 같은 저장 쓰기로 묶어 중복 지급·손실을 막는다
+  if (save.activeRun?.runId === result.runId) save.activeRun = null;
   save.settledRunIds.push(result.runId);
   if (save.settledRunIds.length > MAX_SETTLED_IDS) save.settledRunIds.splice(0, save.settledRunIds.length - MAX_SETTLED_IDS);
   summary.applied = true;
@@ -71,4 +76,30 @@ export function settleRun(save: SaveData, result: RunResult): SettlementSummary 
 /** 출격 시 판 id 발급. 발급 즉시 저장해 두면 같은 id가 다시 쓰이지 않는다. */
 export function issueRunId(save: SaveData): number {
   return save.nextRunId++;
+}
+
+/** 출격: 판 id 발급과 저널 시작을 함께 기록한다(호출 뒤 바로 저장할 것). */
+export function beginRun(save: SaveData, chapterId: number): number {
+  const runId = issueRunId(save);
+  save.activeRun = { runId, chapterId, loot: {} };
+  return runId;
+}
+
+/** 판 진행 중 주운 영구 재화·재료를 저널에 반영(호출 뒤 바로 저장할 것). 실제 지급은 정산 때 한 번만. */
+export function recordRunLoot(save: SaveData, runId: number, loot: Partial<Record<LootId, number>>): void {
+  if (save.activeRun?.runId !== runId) return;
+  save.activeRun.loot = { ...loot };
+}
+
+/**
+ * 앱 시작 시: 정산되지 않은 저널이 남아 있으면(갑작스러운 종료) 주운 것만 중도 종료로 정산한다.
+ * 이미 정산된 판이면 저널만 지운다. 이어하기는 없다.
+ */
+export function recoverInterruptedRun(save: SaveData): SettlementSummary | null {
+  const a = save.activeRun;
+  if (!a) return null;
+  return settleRun(save, {
+    runId: a.runId, chapterId: a.chapterId, outcome: 'defeat', defeatCause: 'quit', loot: { ...a.loot },
+    rescued: null, time: 0, kills: { required: 0, requiredTotal: 0, children: 0 }, heroLevel: 1,
+  });
 }
