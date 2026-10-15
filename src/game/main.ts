@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { CampScene } from './scenes/CampScene';
 import { BattleScene } from './scenes/BattleScene';
 import { ResultScene } from './scenes/ResultScene';
+import { RescueScene } from './scenes/RescueScene';
 
 const game = new Phaser.Game({
   type: Phaser.AUTO,
@@ -11,7 +12,7 @@ const game = new Phaser.Game({
   backgroundColor: '#1d1b2a',
   scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
   input: { activePointers: 3 },
-  scene: [CampScene, BattleScene, ResultScene],
+  scene: [CampScene, BattleScene, ResultScene, RescueScene],
 });
 
 // 브라우저 자동 검증용 핸들(게임 동작에는 영향 없음)

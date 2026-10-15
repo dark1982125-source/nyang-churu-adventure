@@ -20,8 +20,10 @@ function forgePreviewSave(): SaveData {
   s.hardUnlocked = [1];
   s.currencies.nyangJelly = 120;
   s.materials = {
-    softJelly: 12, wornLeather: 6, oldYarn: 7, hardJelly: 250, glossyLeather: 1, goldenFurball: 1,
+    softJelly: 12, wornLeather: 6, oldYarn: 15, hardJelly: 250, glossyLeather: 1, goldenFurball: 1,
     fishboneShard: 10, smallStone: 5, smoothStone: 40,
+    // 보호구 확인용: 누빔모자·누빔조끼 제작분 + 강화재 + 유니크 특별 재료
+    oldCloth: 10, fluffyMarshmallow: 20, oldSweater: 15, cloudCottonCandy: 120, cozyBlanketPiece: 1, angoraSweater: 1,
   };
   return s;
 }

@@ -150,6 +150,9 @@ export const SPECIAL_REWARDS: SpecialReward[] = [
   { material: 'flawlessHandle', difficulty: 'hard', chapters: [5, 7, 14], requiresCh8: true },
 ];
 
-/** 장비 슬롯(확정): 무기·몸통 보호구·발 보호구·액세서리 각 1칸, 코스튬 별도 */
-export type GearSlot = 'weapon' | 'body' | 'feet' | 'accessory';
-export const GEAR_SLOT_NAMES: Record<GearSlot, string> = { weapon: '무기', body: '몸통 보호구', feet: '발 보호구', accessory: '액세서리' };
+/**
+ * 장비 슬롯(확정): 무기 1칸 + 보호구 머리·몸통·발 각 1칸(보호구-6종-확정정리.md) + 액세서리 1칸, 코스튬 별도.
+ * 액세서리 2칸·동일품 중복 금지·코스튬 별도칸 제안은 미승인이라 반영하지 않는다.
+ */
+export type GearSlot = 'weapon' | 'head' | 'body' | 'feet' | 'accessory';
+export const GEAR_SLOT_NAMES: Record<GearSlot, string> = { weapon: '무기', head: '머리 보호구', body: '몸통 보호구', feet: '발 보호구', accessory: '액세서리' };

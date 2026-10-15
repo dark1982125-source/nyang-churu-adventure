@@ -6,11 +6,13 @@ import { COMPANIONS } from '../../data/companions';
 import { UPGRADE_NODES } from '../../data/progression';
 import { ULTIMATES, type UltimateId } from '../../data/skills';
 import { buyNode, canBuyNode, nodeLevel, toggleUltimate } from '../../meta/save';
-import { canCraft, craftWeapon, enhanceInfo, enhanceWeapon, equipWeapon, forgeUnlocked, visitForge } from '../../meta/forge';
+import { armorEnhanceInfo, canCraft, canCraftArmor, craftArmor, craftWeapon, enhanceArmor, enhanceInfo, enhanceWeapon, equipArmor, equipWeapon, equippedArmorStats, forgeUnlocked, unequipArmor, visitForge } from '../../meta/forge';
+import { ARMOR_DEFS, ARMOR_IDS, ARMOR_SLOT_NAMES, ARMOR_STAT_NAMES, armorStatsAt, type ArmorId, type ArmorStatKey, type ArmorStats } from '../../data/armor';
+import { pendingClear } from '../../meta/settlement';
 import { CRAFTABLE_WEAPONS, ENHANCE_RULES, GEAR_SLOT_NAMES, WEAPON_DEFS, enhanceAttackBonus, weaponGrade, type MaterialCount, type WeaponId } from '../../data/weapons';
 import { sound } from '../sound';
 
-type Tab = 'main' | 'growth' | 'ult' | 'gear' | 'forge' | 'settings';
+type Tab = 'main' | 'growth' | 'ult' | 'gear' | 'forge' | 'armor' | 'settings';
 
 /** 캠프(출격 준비) 화면. 정면 UI 허용 구역. 배치는 검토용. */
 export class CampScene extends Phaser.Scene {
@@ -28,6 +30,8 @@ export class CampScene extends Phaser.Scene {
 
   create(): void {
     const s = store.save;
+    // 클리어 확정 뒤 구출 중 종료된 판이 있으면 구출 완료 흐름부터 마무리(전투 재개 아님)
+    if (pendingClear(s)) { this.scene.start('rescue'); return; }
     this.cameras.main.setBackgroundColor(COLORS.bg);
     this.input.once('pointerdown', () => sound.unlock());
 
@@ -46,7 +50,7 @@ export class CampScene extends Phaser.Scene {
 
     // 대장간 탭은 깡깡이 구출 전에는 아예 보이지 않는다(미래 시설·동료 정체 비공개)
     const tabs: [Tab, string][] = [['main', '출격'], ['growth', '영구 성장'], ['ult', '궁극기'], ['gear', '장비']];
-    if (forgeUnlocked(s)) tabs.push(['forge', '대장간']);
+    if (forgeUnlocked(s)) tabs.push(['forge', '대장간'], ['armor', '보호구']);
     tabs.push(['settings', '설정']);
     tabs.forEach(([t, label], i) => {
       button(this, 24 + i * 130, 118, 122, 36, label, () => this.scene.restart({ tab: t }), { color: t === this.tab ? 0x5b4f86 : COLORS.panelLight });
@@ -57,6 +61,7 @@ export class CampScene extends Phaser.Scene {
     else if (this.tab === 'ult') this.drawUlt();
     else if (this.tab === 'gear') this.drawGear();
     else if (this.tab === 'forge' && forgeUnlocked(s)) this.drawForge();
+    else if (this.tab === 'armor' && forgeUnlocked(s)) this.drawArmor();
     else this.drawSettings();
   }
 
@@ -177,29 +182,33 @@ export class CampScene extends Phaser.Scene {
     return list.map((m) => `${MATERIAL_NAMES[m.id]} ${s.materials[m.id] ?? 0}/${m.count}`).join(' · ');
   }
 
-  /** 장비 슬롯: 무기·몸통 보호구·발 보호구·액세서리 각 1칸 + 코스튬 별도. 장착은 캠프에서만. */
+  /** 장비 슬롯: 무기 + 보호구 머리·몸통·발 각 1칸 + 액세서리 1칸, 코스튬 별도. 장착은 캠프에서만. */
   private drawGear(): void {
     const s = store.save;
-    text(this, 24, 166, '장비 슬롯 (판 중 교체 없음). 보호구·액세서리는 제작표가 미정이라 비어 있습니다.', 14, COLORS.warn);
-    const slots: [string, string][] = [
-      [GEAR_SLOT_NAMES.weapon, `${WEAPON_DEFS[s.equipment.weapon].name} +${s.weapons[s.equipment.weapon]?.level ?? 0}`],
-      [GEAR_SLOT_NAMES.body, s.equipment.body ?? '비어 있음'],
-      [GEAR_SLOT_NAMES.feet, s.equipment.feet ?? '비어 있음'],
-      [GEAR_SLOT_NAMES.accessory, s.equipment.accessory ?? '비어 있음'],
-      ['코스튬(별도)', s.equipment.costume ?? '비어 있음'],
+    text(this, 24, 162, '장비 슬롯 (판 중 교체 없음). 보호구는 대장간 → 보호구 탭에서 제작·강화·장착합니다.', 13, COLORS.dim);
+    const armorName = (id: ArmorId | null) => (id ? `${ARMOR_DEFS[id].name} +${s.armor[id]?.level ?? 0}` : '비어 있음');
+    const slots: [string, string, boolean][] = [
+      [GEAR_SLOT_NAMES.weapon, `${WEAPON_DEFS[s.equipment.weapon].name} +${s.weapons[s.equipment.weapon]?.level ?? 0}`, true],
+      [GEAR_SLOT_NAMES.head, armorName(s.equipment.head), !!s.equipment.head],
+      [GEAR_SLOT_NAMES.body, armorName(s.equipment.body), !!s.equipment.body],
+      [GEAR_SLOT_NAMES.feet, armorName(s.equipment.feet), !!s.equipment.feet],
+      [GEAR_SLOT_NAMES.accessory, s.equipment.accessory ?? '비어 있음 (나비 제작 미구현)', false],
+      ['코스튬(별도)', s.equipment.costume ?? '비어 있음', false],
     ];
-    slots.forEach(([name, v], i) => {
-      const y = 194 + i * 44;
-      this.add.rectangle(24, y, 400, 38, COLORS.panel).setOrigin(0);
-      text(this, 36, y + 9, `${name}: ${v}`, 15, i === 0 ? COLORS.text : COLORS.dim);
+    slots.forEach(([name, v, on], i) => {
+      const y = 186 + i * 40;
+      this.add.rectangle(24, y, 400, 34, COLORS.panel).setOrigin(0);
+      text(this, 36, y + 8, `${name}: ${v}`, 14, on ? COLORS.text : COLORS.dim);
     });
+    const { total } = equippedArmorStats(s);
+    text(this, 24, 434, `보호구 합계(TEMP 수치): ${this.statLine(total) || '없음'}`, 12, '#bff7ff');
 
-    text(this, 448, 166 + 28, '보유 무기', 18, '#ffd9a0');
+    text(this, 448, 186, '보유 무기', 18, '#ffd9a0');
     const owned = (Object.keys(s.weapons) as WeaponId[]).filter((id) => s.weapons[id]);
     owned.forEach((id, i) => {
       const d = WEAPON_DEFS[id];
       const lv = s.weapons[id]!.level;
-      const y = 224 + i * 50;
+      const y = 216 + i * 50;
       this.add.rectangle(448, y, 488, 44, COLORS.panel).setOrigin(0);
       text(this, 460, y + 4, `${d.name} +${lv} [${weaponGrade(lv)}]`, 15);
       text(this, 460, y + 24, `공격력 +${Math.round(enhanceAttackBonus(lv) * 100)}% · ${d.combatReady ? `기본 공격 ${d.basicAttack}` : '전투 동작 미구현(장착 불가)'}`, 12, COLORS.dim);
@@ -211,13 +220,74 @@ export class CampScene extends Phaser.Scene {
     });
   }
 
+  private statLine(st: ArmorStats): string {
+    const fmt = (k: ArmorStatKey, v: number) => (k === 'maxHp' || k === 'defense' ? `${ARMOR_STAT_NAMES[k]} +${Math.round(v * 10) / 10}` : `${ARMOR_STAT_NAMES[k]} ${Math.round(v * 1000) / 10}%`);
+    return (Object.keys(st) as ArmorStatKey[]).filter((k) => st[k] > 0).map((k) => fmt(k, st[k])).join(' · ');
+  }
+
+  /** 깡깡이 보호구: 설계도 → 제작 → 강화(무기 공통 성공률·보장) → 장착. 효과는 보호구 표(수치 TEMP). */
+  private drawArmor(): void {
+    const s = store.save;
+    const granted = visitForge(s);
+    if (granted.length) { store.persist(); this.forgeMsg = `깡깡이: 설계도 획득 — ${granted.map((id) => (id in ARMOR_DEFS ? ARMOR_DEFS[id as ArmorId].name : WEAPON_DEFS[id as WeaponId].name)).join(', ')}`; }
+    text(this, 24, 162, this.forgeMsg || '머리·몸통·발 각 1칸. 강화 성공률·소모량·실패 보정·10회 보장은 무기와 같고, 효과는 보호구별(수치 TEMP). 재료는 무기와 공유.', 12, this.forgeMsg ? '#bff7ff' : COLORS.dim);
+    ARMOR_IDS.forEach((id, i) => {
+      const d = ARMOR_DEFS[id];
+      const col = i % 2;
+      const row = Math.floor(i / 2);
+      const x = 24 + col * 468;
+      const y = 184 + row * 116;
+      const owned = s.armor[id];
+      this.add.rectangle(x, y, 456, 110, COLORS.panel).setOrigin(0);
+      const bp = s.armorBlueprints.includes(id);
+      const lockNote = d.blueprint.kind === 'undecided' ? '설계도 시점 미정(TEMP)' : d.blueprint.kind === 'firstClear' ? `일반 Ch ${d.blueprint.chapter} 최초 클리어 설계도` : '대장간 설계도';
+      text(this, x + 10, y + 4, `[${ARMOR_SLOT_NAMES[d.slot]}] ${d.name}${owned ? ` +${owned.level} [${weaponGrade(owned.level)}]` : bp ? '' : ` · ${lockNote}`}`, 14, owned || bp ? COLORS.text : COLORS.dim);
+      if (!owned) {
+        text(this, x + 10, y + 26, `제작: ${this.matLine(d.craft)}`, 11, COLORS.dim);
+        text(this, x + 10, y + 58, `일반 효과: ${this.statLine(armorStatsAt(id, 0))}`, 11, '#bff7ff');
+        if (bp) {
+          const c = canCraftArmor(s, id);
+          button(this, x + 350, y + 70, 96, 32, '제작', () => {
+            const r = craftArmor(s, id);
+            if (r === 'ok') { store.persist(); sound.play('levelUp'); }
+            this.scene.restart({ tab: 'armor', msg: r === 'ok' ? `${d.name} 제작 완료!` : '' });
+          }, { size: 13, enabled: c === 'ok' });
+        }
+        return;
+      }
+      text(this, x + 10, y + 24, this.statLine(armorStatsAt(id, owned.level)), 11, '#bff7ff');
+      const info = armorEnhanceInfo(s, id);
+      if (info.blocker === 'max') text(this, x + 10, y + 44, '최대 강화', 12, COLORS.dim);
+      else {
+        const pity = info.pityLeft === 0 ? '다음 시도 확정' : `확정까지 실패 ${info.pityLeft}회`;
+        text(this, x + 10, y + 42, `+${info.target} 성공률 ${Math.round(info.rate * 100)}% (실패 ${info.fails}회) · ${pity}`, 11, COLORS.dim);
+        const sp = info.specials.length ? ` · 특별(성공 시): ${this.matLine(info.specials)}` : '';
+        text(this, x + 10, y + 58, `${info.material ? this.matLine([info.material]) : ''}${sp}`, 11, info.blocker ? '#ffb3b3' : COLORS.dim);
+        button(this, x + 244, y + 74, 96, 30, '강화', () => {
+          const r = enhanceArmor(s, id, Math.random);
+          if (!r.attempted) return;
+          store.persist();
+          sound.play(r.success ? 'levelUp' : 'hurt');
+          this.scene.restart({ tab: 'armor', msg: r.success ? `성공! ${d.name} +${r.newLevel}` : '실패… 단계 유지, 기본 재료만 소모' });
+        }, { size: 13, enabled: !info.blocker });
+      }
+      const on = s.equipment[d.slot] === id;
+      button(this, x + 350, y + 74, 96, 30, on ? '해제' : '장착', () => {
+        if (on) unequipArmor(s, d.slot); else equipArmor(s, id);
+        store.persist();
+        sound.play('pickup');
+        this.scene.restart({ tab: 'armor' });
+      }, { size: 13, color: on ? 0x4f7a5b : COLORS.panelLight });
+    });
+  }
+
   /** 대장간: 설계도 → 제작 → 강화. 냥젤리 비용 없음. */
   private drawForge(): void {
     const s = store.save;
     const granted = visitForge(s);
     if (granted.length) {
       store.persist();
-      this.forgeMsg = `깡깡이: "첫 방문 기념이다냥!" 설계도 획득 — ${granted.map((id) => WEAPON_DEFS[id].name).join(', ')}`;
+      this.forgeMsg = `깡깡이: "첫 방문 기념이다냥!" 설계도 획득 — ${granted.map((id) => (id in ARMOR_DEFS ? ARMOR_DEFS[id as ArmorId].name : WEAPON_DEFS[id as WeaponId].name)).join(', ')}`;
     }
     text(this, 24, 164, this.forgeMsg || `강화: 실패 시 기본 재료만 소모·단계 유지, 같은 단계 실패마다 +${ENHANCE_RULES.failBonus * 100}%p, ${ENHANCE_RULES.pityAfterFails}회 연속 실패 후 확정. 행운 미적용.`, 13, this.forgeMsg ? '#bff7ff' : COLORS.dim);
 

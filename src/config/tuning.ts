@@ -146,6 +146,49 @@ export const TUNING = {
   },
 
   /**
+   * 보호구 능력치(보호구-6종-확정정리.md). 등급별로 붙는 효과 종류는 확정(src/data/armor.ts),
+   * 수치는 전부 TEMP. 모자 2종 수치는 문서가 준 초기 테스트 수치(이것도 TEMP 밸런스).
+   * curve: +0 base, +1~4 단계마다 perLow, +5 unique(총), +6~9 단계마다 perHigh, +10 legend(총).
+   * step: 등급(일반/+5 유니크/+10 전설)별 값. 0이면 그 등급에 해당 효과 없음.
+   * 저항 값은 지속시간(밀쳐내기는 거리, 치명타는 추가 피해) 감소 비율. 면역 아님.
+   */
+  armor: {
+    quiltHat: { maxHp: { base: 20, perLow: 2, unique: 35, perHigh: 3, legend: 60 }, bleed: [0.1, 0.2, 0.3] }, // TEMP(문서 초기 테스트 수치)
+    explorerHelmet: { maxHp: { base: 20, perLow: 2, unique: 35, perHigh: 3, legend: 60 }, stun: [0.1, 0.2, 0.3] }, // TEMP(문서 초기 테스트 수치)
+    quiltVest: { defense: { base: 8, perLow: 1, unique: 15, perHigh: 1.5, legend: 25 }, knockback: [0, 0.2, 0.3], critDamage: [0, 0, 0.2] }, // TEMP
+    bulletArmor: { defense: { base: 12, perLow: 1.5, unique: 22, perHigh: 2, legend: 35 }, burn: [0, 0.2, 0.3], maxHp: [0, 0, 20] }, // TEMP 조끼보다 높은 방어(확정 관계)
+    squishySneaker: { evasion: { base: 0.03, perLow: 0.003, unique: 0.06, perHigh: 0.005, legend: 0.1 }, slow: [0, 0.2, 0.3], freeze: [0, 0, 0.2] }, // TEMP
+    explorerBoots: { defense: { base: 6, perLow: 1, unique: 12, perHigh: 1.5, legend: 20 }, knockback: [0, 0.2, 0.3], slow: [0, 0, 0.2] }, // TEMP
+  },
+
+  /**
+   * 미정 규칙의 시험 옵션(사용자 결정 전). 기본값은 지금 동작을 바꾸지 않는 쪽.
+   * - resist: 같은 종류 저항이 여러 장비에서 올 때 합산 방식·상한·빙결 최대시간과의 적용 순서.
+   * - enemyCrit: 적 치명타 발생 규칙. 확정 전이라 기본 꺼짐(조끼 +10 치명타 피해 감소는 꺼져 있으면 효과 없음).
+   * - heroKnockback: 호냥이가 밀려날 때 캠프 동기 이동과의 관계. 지금 호냥이를 미는 적은 없다(시험 진입점만).
+   */
+  undecided: {
+    resist: {
+      stacking: 'additive' as 'additive' | 'multiplicative', // TEMP 합산 / 곱연산(1-∏(1-r))
+      cap: 0.6, // TEMP 저항 합산 상한
+      /** 빙결: 'resistThenCap' 저항 뒤 최대시간 제한, 'capThenResist' 최대시간 제한 뒤 저항 */
+      freezeOrder: 'resistThenCap' as 'resistThenCap' | 'capThenResist', // TEMP
+    },
+    enemyCrit: {
+      enabled: false, // 미정: 적 치명타 없음이 기본
+      chance: 0.1, // TEMP(켰을 때만)
+      multiplier: 1.5, // TEMP
+      /** 'bonusOnly' 치명타 추가분만 감소, 'wholeHit' 치명타 피해 전체 감소 */
+      reduction: 'bonusOnly' as 'bonusOnly' | 'wholeHit', // TEMP
+    },
+    heroKnockback: {
+      /** 'campStays' 캠프는 제자리(간격 줄어듦, 최소 간격에서 멈춤), 'campPushed' 캠프도 같이 밀려 간격 유지 */
+      campSync: 'campStays' as 'campStays' | 'campPushed', // TEMP
+      minGap: 60, // TEMP 호냥이-캠프 최소 간격
+    },
+  },
+
+  /**
    * 상태이상. 중첩 규칙은 확정(같은 DOT는 강한 효과 유지·시간 갱신, 빙결·감속은 강도 중첩 없이 시간 갱신,
    * 다른 종류는 공존, 빙결 해제 뒤 짧은 재빙결 면역). 수치는 전부 TEMP.
    */

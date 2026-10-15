@@ -10,6 +10,7 @@ import {
   campOffers, heroOffers, isAutoGrant, type FillerOffer, type Offer, type PendingChoice, type RunSkills,
 } from './choices';
 import { Rng } from './rng';
+import { enemyCritDamage, heroKnockback, resistedDuration } from './armorRules';
 import { prescriptionOrder, StatusSet, type StatusApply } from './status';
 
 /**
@@ -133,7 +134,7 @@ export interface LogEntry {
   type:
     | 'waveStart' | 'waveClear' | 'eliteSpawn' | 'kill' | 'split' | 'pass' | 'outOfBounds' | 'missedPickup'
     | 'levelUp' | 'campLevelUp' | 'skill' | 'ult' | 'revive' | 'bell' | 'key' | 'jailOpen' | 'victory' | 'defeat'
-    | 'evade' | 'crit' | 'rockBroken' | 'rockHitCamp' | 'loot' | 'cleanup' | 'quit' | 'filler'
+    | 'evade' | 'crit' | 'enemyCrit' | 'rockBroken' | 'rockHitCamp' | 'loot' | 'cleanup' | 'quit' | 'filler'
     | 'status' | 'statusImmune' | 'cure' | 'prescribe' | 'enemyCc' | 'shotBroken' | 'shotHitCamp' | 'autoCollect'
     | 'transition' | 'finaleIntro' | 'clearConfirmed';
   detail?: string;
@@ -329,7 +330,8 @@ export class Battle {
       hpRegen: P.hpRegen * lv('hpRegen'),
       defense: this.totalDefense(),
       damageTaken: 100 / (100 + this.totalDefense()),
-      evasion: Math.min(P.caps.evasion, P.evasion * lv('evasion')),
+      // 보호구 회피(스니커)와 판 안 회피 패시브를 합쳐 상한(미정, TEMP) 적용
+      evasion: Math.min(P.caps.evasion, this.loadout.armor.evasion + P.evasion * lv('evasion')),
       energyRegen: TUNING.player.energyRegen * (1 + P.energyRegen * lv('energyRegen')),
       luck: this.loadout.baseLuck + P.luck * lv('luck'),
       pickupRadius: TUNING.pickups.magnetRadius * (1 + P.pickupRadius * lv('pickupRadius')),
@@ -1436,7 +1438,9 @@ export class Battle {
    * 호냥이 상태이상 적용(외부·테스트용 진입점 포함). 회피는 damagePlayer에서 이미 걸러진다.
    */
   applyHeroStatus(a: StatusApply): void {
-    const r = this.heroStatus.apply(a);
+    // 보호구 지속시간 감소(면역 아님). 감속 저항은 적 스킬 감속만, 지형 감속 제외
+    const duration = resistedDuration(a.tag, a.origin ?? 'enemySkill', a.duration, this.loadout.armor.resist);
+    const r = this.heroStatus.apply({ ...a, duration });
     if (r === 'immune') { this.logEvent('statusImmune', a.tag); return; }
     this.logEvent('status', `${a.tag}:${r}`, a.intensity);
     if (r === 'applied') this.addEffect({ kind: 'text', x1: this.player.x, x2: 0, y1: 104, y2: 0, ttl: 0.7, text: STATUS_NAMES[a.tag], color: 0xd0a0ff });
@@ -1465,8 +1469,11 @@ export class Battle {
       this.addEffect({ kind: 'text', x1: p.x, x2: 0, y1: 70, y2: 0, ttl: 0.5, text: '회피!', color: 0xbff7ff });
       return false;
     }
+    // [미정 옵션] 적 치명타: 기본 꺼짐(난수도 쓰지 않음). 켜면 조끼 +10 받는 치명타 피해 감소 적용
+    const ec = enemyCritDamage(n, () => this.rng.next(), this.loadout.armor.resist.critDamage);
+    if (ec.crit) this.logEvent('enemyCrit', undefined, ec.dmg);
     // 확정 공식: 원래 피해 × 100/(100+방어력). 반올림은 미정(TEMP 옵션)
-    const raw = n * st.damageTaken;
+    const raw = ec.dmg * st.damageTaken;
     p.hp -= TUNING.defense.round ? Math.round(raw) : raw;
     p.invuln = TUNING.player.contactInvuln;
     p.hurt = 0.25;
@@ -1474,6 +1481,18 @@ export class Battle {
     // HP 0 처리(방울 부활 포함)는 이 틱 끝 resolveDefeat()에서 캠프 판정 뒤에 한다
     if (p.hp <= 0) p.hp = 0;
     return true;
+  }
+
+  /**
+   * [미정 옵션·시험 진입점] 호냥이 밀쳐내기. 지금 호냥이를 미는 적은 없다.
+   * 보호구 밀쳐내기 거리 감소 후 TUNING.undecided.heroKnockback.campSync로 캠프 동기 이동 관계를 비교한다.
+   */
+  knockbackHero(dist: number): number {
+    if (this.finished || this.clearConfirmed) return 0;
+    const r = heroKnockback(this.player.x, this.camp.x, dist, this.loadout.armor.resist.knockback);
+    this.player.x = r.heroX;
+    this.camp.x = r.campX;
+    return r.moved;
   }
 
   damageCamp(n: number): void {

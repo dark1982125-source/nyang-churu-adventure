@@ -1,8 +1,10 @@
 import { isCurrency, type LootId, type MaterialId } from '../data/items';
 import type { WeaponId } from '../data/weapons';
-import { firstClearBlueprints, specialClearRewards } from './forge';
+import type { ArmorId } from '../data/armor';
+import type { CompanionId } from '../data/companions';
+import { firstClearArmorBlueprints, firstClearBlueprints, specialClearRewards } from './forge';
 import type { RunResult } from '../sim/battle';
-import type { SaveData } from './save';
+import type { ActiveRun, SaveData } from './save';
 
 export interface SettlementSummary {
   applied: boolean;
@@ -12,6 +14,7 @@ export interface SettlementSummary {
   firstClear: boolean;
   loot: Partial<Record<LootId, number>>;
   blueprints: WeaponId[];
+  armorBlueprints: ArmorId[];
   specials: MaterialId[];
 }
 
@@ -24,7 +27,7 @@ const MAX_SETTLED_IDS = 50;
  * - 판 안 임시 레벨·기술·다시냥 방울은 Battle 객체와 함께 버려진다(저장에 없음)
  */
 export function settleRun(save: SaveData, result: RunResult): SettlementSummary {
-  const summary: SettlementSummary = { applied: false, duplicate: false, newlyRescued: null, firstClear: false, loot: result.loot, blueprints: [], specials: [] };
+  const summary: SettlementSummary = { applied: false, duplicate: false, newlyRescued: null, firstClear: false, loot: result.loot, blueprints: [], armorBlueprints: [], specials: [] };
   if (save.settledRunIds.includes(result.runId)) {
     summary.duplicate = true;
     if (save.activeRun?.runId === result.runId) save.activeRun = null;
@@ -50,6 +53,9 @@ export function settleRun(save: SaveData, result: RunResult): SettlementSummary 
       // 일반 난도 최초 클리어 설계도(1회 등록)
       for (const bp of firstClearBlueprints(result.chapterId)) {
         if (!save.blueprints.includes(bp)) { save.blueprints.push(bp); summary.blueprints.push(bp); }
+      }
+      for (const bp of firstClearArmorBlueprints(result.chapterId)) {
+        if (!save.armorBlueprints.includes(bp)) { save.armorBlueprints.push(bp); summary.armorBlueprints.push(bp); }
       }
     }
     // 지정 챕터 반복 클리어 특별 재료: 매 클리어 1개, 행운 미적용. 전설용은 본편 Ch 8 이후.
@@ -92,12 +98,54 @@ export function recordRunLoot(save: SaveData, runId: number, loot: Partial<Recor
 }
 
 /**
+ * 클리어 확정 순간(최종 보스·필수 분열체 전멸) 저널에 기록한다(호출 뒤 바로 저장할 것).
+ * 이 시점 loot는 확정 직후 자동 회수까지 포함한다. 동료·클리어 보상은 아직 지급하지 않는다.
+ */
+export function markClearConfirmed(save: SaveData, result: RunResult, rescue: CompanionId | null): void {
+  const a = save.activeRun;
+  if (a?.runId !== result.runId || save.settledRunIds.includes(result.runId)) return;
+  a.loot = { ...result.loot };
+  a.clearConfirmed = { rescue, time: result.time, heroLevel: result.heroLevel, kills: { ...result.kills } };
+}
+
+/** 클리어 확정 뒤 구출을 끝내지 못하고 꺼진 판(다음 실행 때 구출 완료 흐름으로 복귀). 이미 정산된 판이면 null. */
+export function pendingClear(save: SaveData): (ActiveRun & { clearConfirmed: NonNullable<ActiveRun['clearConfirmed']> }) | null {
+  const a = save.activeRun;
+  if (!a?.clearConfirmed || save.settledRunIds.includes(a.runId)) return null;
+  return a as ActiveRun & { clearConfirmed: NonNullable<ActiveRun['clearConfirmed']> };
+}
+
+/** 복귀 흐름에서 감옥을 연 뒤의 결과(전투 없이 저널 값으로 만든 승리) */
+export function pendingClearResult(a: ActiveRun & { clearConfirmed: NonNullable<ActiveRun['clearConfirmed']> }): RunResult {
+  const c = a.clearConfirmed;
+  return {
+    runId: a.runId, chapterId: a.chapterId, outcome: 'victory', defeatCause: null, loot: { ...a.loot },
+    rescued: c.rescue, time: c.time, kills: { ...c.kills }, heroLevel: c.heroLevel,
+  };
+}
+
+/**
+ * 복귀 흐름 마지막(감옥 개방·정체 공개 뒤): 승리로 한 번만 정산. 같은 runId라 중복 지급 없음.
+ */
+export function completePendingClear(save: SaveData): { result: RunResult; summary: SettlementSummary } | null {
+  const a = pendingClear(save);
+  if (!a) return null;
+  const result = pendingClearResult(a);
+  return { result, summary: settleRun(save, result) };
+}
+
+/**
  * 앱 시작 시: 정산되지 않은 저널이 남아 있으면(갑작스러운 종료) 주운 것만 중도 종료로 정산한다.
  * 이미 정산된 판이면 저널만 지운다. 이어하기는 없다.
+ * 단, 클리어가 확정된 판은 정산하지 않고 남겨 둔다(구출 완료 흐름으로 복귀, pendingClear).
  */
 export function recoverInterruptedRun(save: SaveData): SettlementSummary | null {
   const a = save.activeRun;
   if (!a) return null;
+  if (a.clearConfirmed) {
+    if (save.settledRunIds.includes(a.runId)) save.activeRun = null;
+    return null;
+  }
   return settleRun(save, {
     runId: a.runId, chapterId: a.chapterId, outcome: 'defeat', defeatCause: 'quit', loot: { ...a.loot },
     rescued: null, time: 0, kills: { required: 0, requiredTotal: 0, children: 0 }, heroLevel: 1,

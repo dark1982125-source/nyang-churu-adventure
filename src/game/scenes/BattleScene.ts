@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { Battle, type Enemy, type InputState } from '../../sim/battle';
 import { offerLabel } from '../../sim/choices';
 import { buildLoadout } from '../../meta/save';
-import { beginRun, recordRunLoot, settleRun } from '../../meta/settlement';
+import { beginRun, markClearConfirmed, recordRunLoot, settleRun } from '../../meta/settlement';
 import { TUNING } from '../../config/tuning';
 import { PASSIVES, ULTIMATES, type PassiveId } from '../../data/skills';
 import { MEDICINES, STATUS_NAMES, type MedicineId } from '../../data/medicines';
@@ -36,6 +36,7 @@ export class BattleScene extends Phaser.Scene {
   private choiceShownFor: unknown = null;
   private logCursor = 0;
   private settled = false;
+  private clearJournaled = false;
   private hudTexts: Record<string, Phaser.GameObjects.Text> = {};
   private quitConfirm: Phaser.GameObjects.Container | null = null;
 
@@ -49,6 +50,7 @@ export class BattleScene extends Phaser.Scene {
     this.quitConfirm = null;
     this.battle = new Battle({ runId, seed: (Date.now() ^ (runId * 2654435761)) >>> 0, loadout: buildLoadout(save) });
     this.settled = false;
+    this.clearJournaled = false;
     this.logCursor = 0;
     this.choiceLayer = null;
     this.choiceShownFor = null;
@@ -142,6 +144,13 @@ export class BattleScene extends Phaser.Scene {
     }
     this.playSounds();
     this.draw();
+
+    // 클리어 확정 순간 저널에 기록·저장: 감옥으로 가는 중 앱이 꺼져도 다음 실행 때 구출 완료 흐름으로 복귀
+    if (b.clearConfirmed && !this.clearJournaled && !this.settled) {
+      this.clearJournaled = true;
+      markClearConfirmed(store.save, b.result(), b.chapter.rescue?.companion ?? null);
+      store.persist();
+    }
 
     if (b.finished && !this.settled) {
       this.settled = true;

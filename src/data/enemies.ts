@@ -74,7 +74,11 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     kind: 'dustSlime', name: '먼지 슬라임', rank: 'normal',
     hp: 24, speed: 42, width: 34, height: 26, contactDamage: 6, contactInterval: 0.8,
     catnip: 1, gearChance: 0.35,
-    loot: [{ id: 'softJelly', chance: 0.35, min: 1, max: 1 }, { id: 'nyangJelly', chance: 0.25, min: 1, max: 1 }],
+    loot: [
+      { id: 'softJelly', chance: 0.35, min: 1, max: 1 }, { id: 'nyangJelly', chance: 0.25, min: 1, max: 1 },
+      // 보호구 재료(위임 배치 승인, 확률 TEMP): 폭신 마시멜로·끈끈 슬라임풀
+      { id: 'fluffyMarshmallow', chance: 0.3, min: 1, max: 1 }, { id: 'stickySlimeGlue', chance: 0.12, min: 1, max: 1 },
+    ],
     testStatus: { tag: 'slow', intensity: 0.4, duration: 3 },
   },
   spikyBug: {
@@ -93,6 +97,9 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
       { id: 'oldYarn', chance: 0.2, min: 1, max: 1 },
       { id: 'emptyChuru', chance: 0.2, min: 1, max: 1 },
       { id: 'nyangJelly', chance: 0.3, min: 1, max: 1 },
+      // 보호구 재료(위임 배치 승인, 확률 TEMP): 낡은 천조각·낡은 스웨터
+      { id: 'oldCloth', chance: 0.3, min: 1, max: 1 },
+      { id: 'oldSweater', chance: 0.3, min: 1, max: 1 },
     ],
     testStatus: { tag: 'burn', intensity: 4, duration: 3 },
   },
@@ -114,6 +121,7 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
       { id: 'hardJelly', chance: 1, min: 3, max: 5 }, // 단단젤리 일반 난도 엘리트 100% 3~5 (확정 초기 설정)
       { id: 'softJelly', chance: 1, min: 1, max: 2 },
       { id: 'nyangJelly', chance: 1, min: 3, max: 5 },
+      { id: 'cloudCottonCandy', chance: 1, min: 3, max: 5 }, // 보호구 기본 강화재(위임 배치 승인, 수량 TEMP)
     ],
     splitInto: { kind: 'dustSlime', count: 3 }, // TEMP 분열 수
     testStatus: { tag: 'poison', intensity: 3, duration: 5 },

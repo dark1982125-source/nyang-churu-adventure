@@ -4,7 +4,8 @@ import type { UltimateId } from '../data/skills';
 import { NODE_BY_ID } from '../data/progression';
 import { TUNING, type AdvanceMode, type PassPolicy } from '../config/tuning';
 import type { WeaponId } from '../data/weapons';
-import { equippedWeaponAttackMul } from './forge';
+import { ARMOR_DEFS, type ArmorId } from '../data/armor';
+import { equippedArmorStats, equippedWeaponAttackMul } from './forge';
 
 /**
  * 영구 저장 상태. 판 상태(RunState, sim/battle.ts)와 완전히 분리된다.
@@ -17,8 +18,15 @@ export interface SaveData {
   blueprints: WeaponId[];
   /** 보유 무기와 강화 상태. fails: 목표 단계별 연속 실패 횟수(성공 시 초기화) */
   weapons: Partial<Record<WeaponId, { level: number; fails: Record<number, number> }>>;
-  /** 장비 슬롯. 보호구·액세서리는 제작표 미정이라 비어 있다. 코스튬 별도. */
-  equipment: { weapon: WeaponId; body: string | null; feet: string | null; accessory: string | null; costume: string | null };
+  /** 보호구 설계도(깡깡이). 무기 설계도와 따로 둔다. */
+  armorBlueprints: ArmorId[];
+  /** 보유 보호구와 강화 상태(무기와 같은 구조) */
+  armor: Partial<Record<ArmorId, { level: number; fails: Record<number, number> }>>;
+  /**
+   * 장비 슬롯. 보호구 머리·몸통·발 각 1칸(확정). 액세서리 1칸은 나비 제작 미구현이라 비어 있다
+   * (액세서리 2칸·중복 금지·코스튬 별도칸 제안은 미승인이라 넣지 않음). 코스튬은 기존 그대로 별도 표시.
+   */
+  equipment: { weapon: WeaponId; head: ArmorId | null; body: ArmorId | null; feet: ArmorId | null; accessory: string | null; costume: string | null };
   flags: { forgeVisited: boolean };
   rescued: CompanionId[];
   /** 일반 난이도 최초 클리어한 챕터 */
@@ -35,7 +43,7 @@ export interface SaveData {
    * 진행 중인 판의 저널. 출격 즉시 기록하고, 영구 재화·재료를 주울 때마다 갱신·저장한다.
    * 정상 종료 정산과 같은 저장 쓰기에서 지워진다. 앱이 도중에 꺼져 남아 있으면 다음 실행 때 중도 종료로 정산한다.
    */
-  activeRun: { runId: number; chapterId: number; loot: Partial<Record<LootId, number>> } | null;
+  activeRun: ActiveRun | null;
   settings: {
     advanceMode: AdvanceMode; passPolicy: PassPolicy; bgmVolume: number; sfxVolume: number;
     /** [시험] 캠프 위협 A/B 임시 적 등장 */
@@ -45,6 +53,18 @@ export interface SaveData {
   };
 }
 
+export interface ActiveRun {
+  runId: number;
+  chapterId: number;
+  loot: Partial<Record<LootId, number>>;
+  /**
+   * 클리어 확정 뒤(최종 보스 처치 → 열쇠·감옥·구출 연출 중) 기록. 이 상태로 앱이 꺼지면 다음 실행 때
+   * 중도 종료로 정산하지 않고 구출 완료 흐름(감옥 개방 → 정체 공개 → 결과)으로 돌아간다. 전투 재개는 없다.
+   * 동료·클리어 보상은 감옥을 연 뒤 정산에서만 지급한다.
+   */
+  clearConfirmed?: { rescue: CompanionId | null; time: number; heroLevel: number; kills: { required: number; requiredTotal: number; children: number } };
+}
+
 export function newSave(): SaveData {
   return {
     version: 1,
@@ -52,7 +72,9 @@ export function newSave(): SaveData {
     materials: {},
     blueprints: [],
     weapons: { starterGlove: { level: 0, fails: {} } },
-    equipment: { weapon: 'starterGlove', body: null, feet: null, accessory: null, costume: null },
+    armorBlueprints: [],
+    armor: {},
+    equipment: { weapon: 'starterGlove', head: null, body: null, feet: null, accessory: null, costume: null },
     flags: { forgeVisited: false },
     rescued: [],
     clearedChapters: [],
@@ -114,13 +136,22 @@ export function loadSave(storage: SaveStorage): SaveData {
         delete materials[oldId];
       }
     }
+    const armor = { ...parsed.armor };
+    const equipment = { ...base.equipment, ...parsed.equipment };
+    // 보호구 이전 저장의 몸통·발 칸(문자열 자리)이나 보유하지 않은·다른 부위 장비는 비운다(능력치 중복·유령 장비 방지)
+    for (const slot of ['head', 'body', 'feet'] as const) {
+      const id = equipment[slot] as ArmorId | null;
+      if (id && (!ARMOR_DEFS[id] || ARMOR_DEFS[id].slot !== slot || !armor[id])) equipment[slot] = null;
+    }
     return {
       ...base,
       ...parsed,
       currencies: { ...base.currencies, ...parsed.currencies },
       materials: materials as SaveData['materials'],
       weapons: { ...base.weapons, ...parsed.weapons },
-      equipment: { ...base.equipment, ...parsed.equipment },
+      armorBlueprints: [...(parsed.armorBlueprints ?? [])],
+      armor,
+      equipment,
       flags: { ...base.flags, ...parsed.flags },
       stats: { ...base.stats, ...parsed.stats },
       settings: { ...base.settings, ...parsed.settings },
@@ -194,19 +225,26 @@ export interface Loadout {
   panacea: boolean;
   campThreatTest: boolean;
   statusTest: boolean;
+  /**
+   * 장착 보호구 능력치(출격 순간 한 번 계산). 최대 체력·방어는 위 maxHp·defense에 이미 합산,
+   * 회피는 판 안 회피와 합쳐 상한 적용, 저항은 상태이상 시간·밀쳐내기·치명타(미정 옵션)에 쓴다.
+   */
+  armor: { maxHp: number; evasion: number; resist: { bleed: number; burn: number; freeze: number; slow: number; stun: number; knockback: number; critDamage: number } };
+}
+
+/** 장착 보호구의 방어 포인트 합(수치 TEMP). 영구 + 장비 + 판 임시 중 '장비' 몫. */
+export function equipmentDefense(save: SaveData): number {
+  return equippedArmorStats(save).total.defense;
 }
 
 /**
- * 장착 장비의 방어 포인트. 몸통·발 보호구 제작표·수치가 아직 없어 0(TEMP 자리).
- * 보호구 데이터가 오면 여기서 합산한다.
+ * 출격 능력치. 저장을 읽기만 하는 순수 계산이라 몇 번 불러도 같은 값이다.
+ * 보호구 최대 체력은 출격 때 최대 HP에 한 번만 더해지고, 판 중 장비 교체가 없어 재계산·재회복이 없다.
  */
-export function equipmentDefense(_save: SaveData): number {
-  return 0;
-}
-
 export function buildLoadout(save: SaveData): Loadout {
+  const armor = equippedArmorStats(save).total;
   return {
-    maxHp: TUNING.player.maxHp + nodeLevel(save, 'hp') * 10,
+    maxHp: TUNING.player.maxHp + nodeLevel(save, 'hp') * 10 + armor.maxHp,
     damageMul: 1 + nodeLevel(save, 'atk') * 0.06,
     baseLuck: TUNING.player.baseLuck + nodeLevel(save, 'luck'),
     campMaxMental: TUNING.camp.maxMental + nodeLevel(save, 'campMental') * 15,
@@ -221,5 +259,10 @@ export function buildLoadout(save: SaveData): Loadout {
     panacea: nodeLevel(save, 'panacea') > 0,
     campThreatTest: save.settings.campThreatTest,
     statusTest: save.settings.statusTest,
+    armor: {
+      maxHp: armor.maxHp,
+      evasion: armor.evasion,
+      resist: { bleed: armor.bleed, burn: armor.burn, freeze: armor.freeze, slow: armor.slow, stun: armor.stun, knockback: armor.knockback, critDamage: armor.critDamage },
+    },
   };
 }

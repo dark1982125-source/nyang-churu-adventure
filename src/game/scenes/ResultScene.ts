@@ -3,6 +3,7 @@ import type { LogEntry, RunResult } from '../../sim/battle';
 import type { SettlementSummary } from '../../meta/settlement';
 import { LOOT_NAMES, MATERIAL_NAMES, type LootId } from '../../data/items';
 import { WEAPON_DEFS } from '../../data/weapons';
+import { ARMOR_DEFS } from '../../data/armor';
 import { COMPANIONS, type CompanionId } from '../../data/companions';
 import { button, COLORS, text } from '../ui';
 
@@ -10,7 +11,7 @@ import { button, COLORS, text } from '../ui';
 export class ResultScene extends Phaser.Scene {
   constructor() { super('result'); }
 
-  create(data: { result: RunResult; summary: SettlementSummary; log: LogEntry[] }): void {
+  create(data: { result: RunResult; summary: SettlementSummary; log: LogEntry[]; resumed?: boolean }): void {
     const { result, summary, log } = data;
     const win = result.outcome === 'victory';
     this.cameras.main.setBackgroundColor(win ? 0x2d3b4f : 0x3a2533);
@@ -29,6 +30,7 @@ export class ResultScene extends Phaser.Scene {
     const extra = [
       ...summary.specials.map((m) => `★ ${MATERIAL_NAMES[m]} +1 (클리어 보상)`),
       ...summary.blueprints.map((id) => `📜 ${WEAPON_DEFS[id].name} 설계도`),
+      ...(summary.armorBlueprints ?? []).map((id) => `📜 ${ARMOR_DEFS[id].name} 설계도`),
     ];
     text(this, 40, 150, [...(lootLines.length ? lootLines : ['없음']), ...extra].join('\n'), 14);
 
@@ -50,6 +52,7 @@ export class ResultScene extends Phaser.Scene {
       '',
       '임시 레벨·기술·패시브·다시냥 방울은 판 종료로 초기화됨',
       summary.duplicate ? '※ 이미 정산된 판(중복 지급 없음)' : '',
+      data.resumed ? '※ 구출 중 종료된 판을 이어서 마무리(전투 재개 없음, 기록은 확정 시점 기준)' : '',
       summary.firstClear ? '최초 클리어 · 고난도 Ch 1 해금(고난도 미구현)' : '',
     ].filter(Boolean).join('\n'), 14);
 

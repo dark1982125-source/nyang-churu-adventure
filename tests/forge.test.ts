@@ -28,7 +28,8 @@ describe('대장간 해금·설계도', () => {
 
   test('첫 방문에 장갑·검 설계도를 함께 1회만 받는다', () => {
     const s = withKangkang();
-    expect(visitForge(s).sort()).toEqual(['fishboneSword', 'jellyGlove']);
+    // 6차: 누빔모자·누빔조끼 설계도도 대장간(깡깡이 구출 후)에서 함께 받는다
+    expect(visitForge(s).sort()).toEqual(['fishboneSword', 'jellyGlove', 'quiltHat', 'quiltVest']);
     expect(visitForge(s)).toEqual([]);
     expect(s.blueprints.sort()).toEqual(['fishboneSword', 'jellyGlove']);
   });
@@ -166,11 +167,12 @@ describe('강화', () => {
 describe('특별 재료 보상', () => {
   test('일반 난도 지정 챕터 클리어마다 1개', () => {
     expect(specialClearRewards(2, 'normal', false)).toEqual(['hardFishbone']);
-    expect(specialClearRewards(3, 'normal', false).sort()).toEqual(['glossyLeather', 'magicCatnipBall']);
+    expect(specialClearRewards(3, 'normal', false).sort()).toEqual(['angoraSweater', 'cozyBlanketPiece', 'glossyLeather', 'magicCatnipBall']);
   });
 
   test('고난도 전설 재료는 본편 Ch 8 일반 클리어 이후에만', () => {
     expect(specialClearRewards(3, 'hard', false)).toEqual([]);
-    expect(specialClearRewards(3, 'hard', true).sort()).toEqual(['fairyRibbon', 'goldenCatnipBranch', 'goldenFurball']);
+    // 황금빛 털뭉치는 장갑·누빔모자 공용 재료라 한 번만(1개) 지급
+    expect(specialClearRewards(3, 'hard', true).sort()).toEqual(['camoFeather', 'cloudLeather', 'fairyRibbon', 'goldenCatnipBranch', 'goldenFurball', 'grandmaSweater', 'steelWeb']);
   });
 });
